@@ -14,7 +14,7 @@
 #include "vulkan_surface.h"
 #include "vulkan_swap_chain.h"
 
-#include "triangle.h"
+#include "vulkan_object.h"
 
 class Tutorial {
 public:
@@ -39,8 +39,6 @@ private:
     void DestroySwapChain();
     void CreateImageViews();
     void DestroyImageViews();
-    void CreateRenderPass();
-    void DestroyRenderPass();
     void CreateGraphicPipeline();
     void DestroyGraphicPipeline();
     void CreateFrameBuffers();
@@ -73,7 +71,6 @@ private:
     VulkanQueue* graphic_queue_;
     VulkanQueue* present_queue_;
     VulkanSwapChain* swap_chain_;
-    VulkanRenderPass* render_pass_;
     std::vector<VulkanFrameBuffer*> frame_buffers_;
     std::vector<VkImage> swap_chain_images_;
     std::vector<VulkanImageView*> swap_chain_image_views_;

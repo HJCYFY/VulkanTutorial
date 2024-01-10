@@ -7,13 +7,19 @@
 #include <cassert>
 #include "log.h"
 
-VulkanObject::VulkanObject(VulkanLogicDevice* device) :
+VulkanObject::VulkanObject(VulkanLogicDevice* device,
+                           VkFormat swap_chain_image_format,
+                           VkExtent2D frame_buffer_size) :
         device_(device),
-        pipeline_layout_(nullptr),
-        pipeline_(nullptr) {
+        swap_chain_image_format_(swap_chain_image_format),
+        frame_buffer_size_(frame_buffer_size),
+        render_pass_(nullptr),
+        pipeline_(nullptr),
+        depth_attachment_image_(nullptr),
+        depth_attachment_image_view_(nullptr) {
 }
 
-VkViewport VulkanObject::GetVkViewport(uint32_t win_width, uint32_t win_height) const {
+VkViewport VulkanObject::GetVkViewport() const {
     /*typedef struct VkViewport {
         float    x;
         float    y;
@@ -25,19 +31,27 @@ VkViewport VulkanObject::GetVkViewport(uint32_t win_width, uint32_t win_height) 
     VkViewport viewport{};
     viewport.x = 0.0f;
     viewport.y = 0.0f;
-    viewport.width = (float) win_width;
-    viewport.height = (float) win_height;
+    viewport.width = (float) frame_buffer_size_.width;
+    viewport.height = (float) frame_buffer_size_.height;
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
     return viewport;
 }
 
-VkRect2D VulkanObject::GetScissor(uint32_t win_width, uint32_t win_height) const {
+VkRect2D VulkanObject::GetScissor() const {
     VkRect2D scissor{};
     scissor.offset = {0, 0};
-    scissor.extent.width = win_width;
-    scissor.extent.height = win_height;
+    scissor.extent.width = frame_buffer_size_.width;
+    scissor.extent.height = frame_buffer_size_.height;
     return scissor;
+}
+
+VulkanRenderPass* VulkanObject::render_pass() {
+    return render_pass_;
+}
+
+VulkanImageView* VulkanObject::depth_attachment_image_view() {
+    return depth_attachment_image_view_;
 }
 
 VulkanPipeline* VulkanObject::pipeline() {
@@ -86,4 +100,8 @@ VulkanShaderModule* VulkanObject::CreateShaderModule(const std::string& name,
     shader_module_create_info.codeSize = code.size() * sizeof (uint32_t);
     shader_module_create_info.pCode = code.data();
     return device_->CreateShaderModule(&shader_module_create_info);
+}
+
+void VulkanObject::DestroyRenderPass() {
+    VulkanLogicDevice::DestroyRenderPass(&render_pass_);
 }

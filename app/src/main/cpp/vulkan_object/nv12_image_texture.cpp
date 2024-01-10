@@ -28,28 +28,34 @@ const char Nv12ImageTexture::kFragShaderSource[] =
 Nv12ImageTexture::Nv12ImageTexture(AAssetManager* asset_manager,
                                    VulkanCommandPool* command_pool,
                                    VulkanQueue* graphic_queue,
-                                   VulkanLogicDevice* device) :
-        VulkanObject(device), asset_manager_(asset_manager),
-        command_pool_(command_pool), graphic_queue_(graphic_queue){
+                                   VulkanLogicDevice* device,
+                                   VkFormat swap_chain_image_format,
+                                   VkExtent2D frame_buffer_size) :
+        VulkanObject(device, swap_chain_image_format, frame_buffer_size),
+        asset_manager_(asset_manager),
+        command_pool_(command_pool),
+        graphic_queue_(graphic_queue),
+        texture_image_(nullptr),
+        texture_image_memory_(nullptr),
+        texture_image_view_(nullptr),
+        texture_image_sampler_(nullptr),
+        vertex_buffer_(nullptr),
+        vertex_memory_(nullptr),
+        indices_buffer_(nullptr),
+        indices_memory_(nullptr),
+        vulkan_descriptor_pool_(nullptr),
+        descriptor_set_layout_(nullptr),
+        vulkan_descriptor_set_(nullptr),
+        pipeline_layout_(nullptr) {
     vertex_str_ = kVertShaderSource;
     fragment_str_ = kFragShaderSource;
 }
 
-int Nv12ImageTexture::CreatePipeline(const VulkanRenderPass* render_pass) {
+int Nv12ImageTexture::CreatePipeline() {
+    // Create ShaderModule
     VulkanShaderModule* vert_shader_module;
     VulkanShaderModule* frag_shader_module;
     VulkanPipeline* pipeline;
-    VulkanDescriptorSetLayout* descriptor_set_layout;
-    VulkanSamplerYcbcrConversion* ycbcr_conversion = CreateSamplerYcbcrConversion();
-    /* typedef struct VkSamplerYcbcrConversionInfo {
-        VkStructureType             sType;
-        const void*                 pNext;
-        VkSamplerYcbcrConversion    conversion;
-    } VkSamplerYcbcrConversionInfo; */
-    VkSamplerYcbcrConversionInfo ycbcr_conversion_info{};
-    ycbcr_conversion_info.sType = VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_INFO;
-    ycbcr_conversion_info.conversion = ycbcr_conversion->ycbcr_conversion();
-
     vert_shader_module = CreateShaderModule("VertShaderSrc",
                                             shaderc_glsl_vertex_shader,
                                             vertex_str_);
@@ -65,40 +71,21 @@ int Nv12ImageTexture::CreatePipeline(const VulkanRenderPass* render_pass) {
         goto ERROR_EXIT;
     }
 
-    vulkan_descriptor_pool_ = CreateDescriptorPool();
-    assert(vulkan_descriptor_pool_);
+    LoadResource();
+    CreateRenderPass();
+    CreateIndexBuffer();
+    CreateVertexBuffer();
+    CreateDescriptorSets();
 
-    CreateTextureImage();
-    CreateTextureImageView(&ycbcr_conversion_info);
-    CreateTextureSampler(&ycbcr_conversion_info);
-    VulkanLogicDevice::DestroySamplerYcbcrConversion(&ycbcr_conversion);
-
-    ////////////////////////////////////////////////////////
-    descriptor_set_layout = CreateDescriptorSetLayout();
-    assert(descriptor_set_layout);
-    pipeline_layout_ = CreatePipelineLayout(descriptor_set_layout);
-    assert(pipeline_layout_);
-    vulkan_descriptor_set_ = CreateDescriptorSet(vulkan_descriptor_pool_, descriptor_set_layout);
-    assert(vulkan_descriptor_set_);
-    ////////////////////////////////////////////////////////
-
-    pipeline = CreateGraphicsPipeline(vert_shader_module, frag_shader_module, pipeline_layout_, render_pass);
+    pipeline = CreateGraphicsPipeline(vert_shader_module, frag_shader_module, pipeline_layout_, render_pass_);
     assert(pipeline);
     if (pipeline == nullptr) {
         goto ERROR_EXIT;
     }
     pipeline_ = pipeline;
 
-    ////////////////////////////////////////////////////////
-    CreateVertexBuffer();
-    CopyDataToVertexBuffer();
-    BindDescriptorSetWithBuffer();
-
-    VulkanLogicDevice::DestroyDescriptorSetLayout(&descriptor_set_layout);
-    ////////////////////////////////////////////////////////
     VulkanLogicDevice::DestroyShaderModule(&vert_shader_module);
     VulkanLogicDevice::DestroyShaderModule(&frag_shader_module);
-    LOG_D("", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n");
     return 0;
     ERROR_EXIT:
     DestroyPipeline();
@@ -106,26 +93,28 @@ int Nv12ImageTexture::CreatePipeline(const VulkanRenderPass* render_pass) {
 }
 
 void Nv12ImageTexture::DestroyPipeline() {
-    LOG_D("", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA 11111111111111111111111\n");
-    VulkanLogicDevice::DestroySampler(&texture_image_sampler_);
-    VulkanLogicDevice::DestroyImageView(&texture_image_view_);
-    VulkanLogicDevice::FreeMemory(&texture_image_memory_);
-    VulkanLogicDevice::DestroyImage(&texture_image_);
-    DestroyVertexBuffer();
     if (pipeline_ != nullptr) {
         VulkanLogicDevice::DestroyPipelines(&pipeline_);
     }
 
-    vulkan_descriptor_pool_->FreeDescriptorSet(&vulkan_descriptor_set_);
-    VulkanLogicDevice::DestroyDescriptorPool(&vulkan_descriptor_pool_);
+    VulkanDescriptorPool::FreeDescriptorSet(&vulkan_descriptor_set_);
+    VulkanLogicDevice::DestroyDescriptorSetLayout(&descriptor_set_layout_);
     VulkanLogicDevice::DestroyPipelineLayout(&pipeline_layout_);
+    VulkanLogicDevice::DestroyDescriptorPool(&vulkan_descriptor_pool_);
+
+    DestroyVertexBuffer();
+    DestroyIndexBuffer();
+
+    VulkanLogicDevice::DestroyRenderPass(&render_pass_);
+
+    VulkanLogicDevice::DestroySampler(&texture_image_sampler_);
+    VulkanLogicDevice::DestroyImageView(&texture_image_view_);
+    VulkanLogicDevice::FreeMemory(&texture_image_memory_);
+    VulkanLogicDevice::DestroyImage(&texture_image_);
 }
 
 void Nv12ImageTexture::Draw(const VulkanCommandBuffer* command_buffer,
-                            const VulkanRenderPass* render_pass,
-                            const VulkanFrameBuffer* frame_buffer,
-                            uint32_t frame_buffer_width,
-                            uint32_t frame_buffer_height) const {
+                            const VulkanFrameBuffer* frame_buffer) const {
     /* typedef struct VkCommandBufferBeginInfo {
         VkStructureType                          sType;
         const void*                              pNext;
@@ -149,27 +138,131 @@ void Nv12ImageTexture::Draw(const VulkanCommandBuffer* command_buffer,
     } VkRenderPassBeginInfo; */
     VkRenderPassBeginInfo render_pass_info{};
     render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    render_pass_info.renderPass = render_pass->render_pass();
+    render_pass_info.renderPass = render_pass_->render_pass();
     render_pass_info.framebuffer = frame_buffer->frame_buffer();
     render_pass_info.renderArea.offset = {0, 0};
-    render_pass_info.renderArea.extent = {frame_buffer_width, frame_buffer_height};
+    render_pass_info.renderArea.extent = frame_buffer_size_;
     VkClearValue clear_color = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
     render_pass_info.clearValueCount = 1;
     render_pass_info.pClearValues = &clear_color;
     command_buffer->CmdBeginRenderPass(&render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
     command_buffer->CmdBindPipeline(VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_->pipeline());
+    command_buffer->CmdBindIndexBuffer(indices_buffer_->buffer(), 0, VK_INDEX_TYPE_UINT16);
     VkBuffer vertex_buffers[] = {vertex_buffer_->buffer()};
     VkDeviceSize offsets[] = {0};
     command_buffer->CmdBindVertexBuffers(0, 1, vertex_buffers, offsets);
-    VkViewport viewport = GetVkViewport(frame_buffer_width, frame_buffer_height);
+
+    VkViewport viewport = GetVkViewport();
     command_buffer->CmdSetViewport(1, &viewport);
-    VkRect2D scissor = GetScissor(frame_buffer_width, frame_buffer_height);
+    VkRect2D scissor = GetScissor();
     command_buffer->CmdSetScissor(1, &scissor);
     VkDescriptorSet descriptor_sets[] = {vulkan_descriptor_set_->descriptor_set()};
     command_buffer->CmdBindDescriptorSets(VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout_->layout(), 0, 1, descriptor_sets, 0, nullptr);
-    command_buffer->CmdDraw(4, 1, 0, 0);
+    command_buffer->CmdDrawIndexed(static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
     command_buffer->CmdEndRenderPass();
     command_buffer->EndCommandBuffer();
+}
+
+void Nv12ImageTexture::LoadResource() {
+    VulkanSamplerYcbcrConversion* ycbcr_conversion = CreateSamplerYcbcrConversion();
+    /* typedef struct VkSamplerYcbcrConversionInfo {
+        VkStructureType             sType;
+        const void*                 pNext;
+        VkSamplerYcbcrConversion    conversion;
+    } VkSamplerYcbcrConversionInfo; */
+    VkSamplerYcbcrConversionInfo ycbcr_conversion_info{};
+    ycbcr_conversion_info.sType = VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_INFO;
+    ycbcr_conversion_info.conversion = ycbcr_conversion->ycbcr_conversion();
+    CreateTextureImage();
+    CreateTextureImageView(&ycbcr_conversion_info);
+    CreateTextureSampler(&ycbcr_conversion_info);
+    VulkanLogicDevice::DestroySamplerYcbcrConversion(&ycbcr_conversion);
+}
+
+void Nv12ImageTexture::CreateRenderPass() {
+    /*typedef struct VkAttachmentDescription {
+        VkAttachmentDescriptionFlags    flags;
+        VkFormat                        format;
+        VkSampleCountFlagBits           samples;
+        VkAttachmentLoadOp              loadOp;
+        VkAttachmentStoreOp             storeOp;
+        VkAttachmentLoadOp              stencilLoadOp;
+        VkAttachmentStoreOp             stencilStoreOp;
+        VkImageLayout                   initialLayout;
+        VkImageLayout                   finalLayout;
+    } VkAttachmentDescription;*/
+    VkAttachmentDescription color_attachment{};
+    color_attachment.format = swap_chain_image_format_;
+    color_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    color_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    color_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    color_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    color_attachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+    /*typedef struct VkAttachmentReference {
+        uint32_t         attachment;
+        VkImageLayout    layout;
+    } VkAttachmentReference;*/
+    VkAttachmentReference color_attachment_ref{};
+    color_attachment_ref.attachment = 0;
+    color_attachment_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    /*typedef struct VkSubpassDescription {
+        VkSubpassDescriptionFlags       flags;
+        VkPipelineBindPoint             pipelineBindPoint;
+        uint32_t                        inputAttachmentCount;
+        const VkAttachmentReference*    pInputAttachments;
+        uint32_t                        colorAttachmentCount;
+        const VkAttachmentReference*    pColorAttachments;
+        const VkAttachmentReference*    pResolveAttachments;
+        const VkAttachmentReference*    pDepthStencilAttachment;
+        uint32_t                        preserveAttachmentCount;
+        const uint32_t*                 pPreserveAttachments;
+    } VkSubpassDescription;*/
+    VkSubpassDescription subpass{};
+    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.colorAttachmentCount = 1;
+    subpass.pColorAttachments = &color_attachment_ref;
+
+    /* typedef struct VkSubpassDependency {
+        uint32_t                srcSubpass;
+        uint32_t                dstSubpass;
+        VkPipelineStageFlags    srcStageMask;
+        VkPipelineStageFlags    dstStageMask;
+        VkAccessFlags           srcAccessMask;
+        VkAccessFlags           dstAccessMask;
+        VkDependencyFlags       dependencyFlags;
+    } VkSubpassDependency; */
+    VkSubpassDependency dependency{};
+    dependency.srcSubpass = VK_SUBPASS_EXTERNAL; // 特殊值VK_SUBPASS_EXTERNAL是指渲染通道之前或之后的隐式子通道
+    dependency.dstSubpass = 0;
+    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.srcAccessMask = 0;
+    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+    /* typedef struct VkRenderPassCreateInfo {
+        VkStructureType                   sType;
+        const void*                       pNext;
+        VkRenderPassCreateFlags           flags;
+        uint32_t                          attachmentCount;
+        const VkAttachmentDescription*    pAttachments;
+        uint32_t                          subpassCount;
+        const VkSubpassDescription*       pSubpasses;
+        uint32_t                          dependencyCount;
+        const VkSubpassDependency*        pDependencies;
+    } VkRenderPassCreateInfo; */
+    VkRenderPassCreateInfo render_pass_info{};
+    render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    render_pass_info.attachmentCount = 1;
+    render_pass_info.pAttachments = &color_attachment;
+    render_pass_info.subpassCount = 1;
+    render_pass_info.pSubpasses = &subpass;
+    render_pass_info.dependencyCount = 1;
+    render_pass_info.pDependencies = &dependency;
+    render_pass_ = device_->CreateRenderPass(&render_pass_info);
 }
 
 void Nv12ImageTexture::CreateVertexBuffer() {
@@ -210,14 +303,13 @@ void Nv12ImageTexture::CreateVertexBuffer() {
     assert(ret == VK_SUCCESS);
     vertex_memory_ = device_->AllocateMemory(&alloc_info);
     assert(vertex_memory_);
-    vertex_memory_->BindBufferMemory(vertex_buffer_->buffer(), 0);
-}
+    ret = vertex_memory_->BindBufferMemory(vertex_buffer_->buffer(), 0);
+    assert(ret == VK_SUCCESS);
 
-void Nv12ImageTexture::CopyDataToVertexBuffer() {
-    void* data;
-    size_t size =  sizeof (vertices_[0]) * vertices_.size();
-    vertex_memory_->MapMemory(0, size, &data);
-    memcpy(data, vertices_.data(), size);
+    void* data = nullptr;
+    ret = vertex_memory_->MapMemory(0, buffer_info.size, &data);
+    assert(ret == VK_SUCCESS);
+    memcpy(data, vertices_.data(), buffer_info.size);
     vertex_memory_->UnmapMemory();
 }
 
@@ -226,10 +318,115 @@ void Nv12ImageTexture::DestroyVertexBuffer() {
     VulkanLogicDevice::DestroyBuffer(&vertex_buffer_);
 }
 
+void Nv12ImageTexture::CreateIndexBuffer() {
+    /* typedef struct VkBufferCreateInfo {
+        VkStructureType        sType;
+        const void*            pNext;
+        VkBufferCreateFlags    flags;
+        VkDeviceSize           size;
+        VkBufferUsageFlags     usage;
+        VkSharingMode          sharingMode;
+        uint32_t               queueFamilyIndexCount;
+        const uint32_t*        pQueueFamilyIndices;
+    } VkBufferCreateInfo; */
+    VkBufferCreateInfo buffer_info{};
+    buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    buffer_info.size = sizeof(indices[0]) * indices.size();
+    buffer_info.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+    buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    indices_buffer_ = device_->CreateBuffer(&buffer_info);
+    assert(indices_buffer_);
+    VkMemoryRequirements mem_requirements{};
+    indices_buffer_->GetBufferMemoryRequirements(&mem_requirements);
+    VkPhysicalDeviceMemoryProperties mem_properties{};
+    device_->GetPhysicalDeviceMemoryProperties(&mem_properties);
+
+    /* typedef struct VkMemoryAllocateInfo {
+        VkStructureType    sType;
+        const void*        pNext;
+        VkDeviceSize       allocationSize;
+        uint32_t           memoryTypeIndex;
+    } VkMemoryAllocateInfo; */
+    VkMemoryAllocateInfo alloc_info{};
+    alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    alloc_info.allocationSize = mem_requirements.size;
+    VkResult ret = VulkanLogicDevice::GetMemoryType(&mem_properties, mem_requirements.memoryTypeBits,
+                                                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                                    &alloc_info.memoryTypeIndex);
+    assert(ret == VK_SUCCESS);
+    indices_memory_ = device_->AllocateMemory(&alloc_info);
+    assert(indices_memory_);
+    ret = indices_memory_->BindBufferMemory(indices_buffer_->buffer(), 0);
+    assert(ret == VK_SUCCESS);
+
+    void* data = nullptr;
+    ret = indices_memory_->MapMemory(0, buffer_info.size, &data);
+    assert(ret == VK_SUCCESS);
+    memcpy(data, indices.data(), buffer_info.size);
+    indices_memory_->UnmapMemory();
+}
+
+void Nv12ImageTexture::DestroyIndexBuffer() {
+    VulkanLogicDevice::FreeMemory(&indices_memory_);
+    VulkanLogicDevice::DestroyBuffer(&indices_buffer_);
+}
+
+void Nv12ImageTexture::CreateDescriptorSets() {
+    vulkan_descriptor_pool_ = CreateDescriptorPool();
+    assert(vulkan_descriptor_pool_);
+
+    descriptor_set_layout_ = CreateDescriptorSetLayout();
+    assert(descriptor_set_layout_);
+    pipeline_layout_ = CreatePipelineLayout(descriptor_set_layout_);
+    assert(pipeline_layout_);
+    VkDescriptorSetLayout set_layout1 = descriptor_set_layout_->descriptor_set_layout();
+    vulkan_descriptor_set_ = vulkan_descriptor_pool_->AllocateDescriptorSet(&set_layout1);
+    assert(vulkan_descriptor_set_);
+    BindDescriptorSetWithBuffer();
+}
+
+VulkanSamplerYcbcrConversion* Nv12ImageTexture::CreateSamplerYcbcrConversion() {
+    /* typedef struct VkSamplerYcbcrConversionCreateInfo {
+       VkStructureType                  sType;
+       const void*                      pNext;
+       VkFormat                         format;
+       VkSamplerYcbcrModelConversion    ycbcrModel;
+       VkSamplerYcbcrRange              ycbcrRange;
+       VkComponentMapping               components;
+       VkChromaLocation                 xChromaOffset;
+       VkChromaLocation                 yChromaOffset;
+       VkFilter                         chromaFilter;
+       VkBool32                         forceExplicitReconstruction;
+   } VkSamplerYcbcrConversionCreateInfo; */
+    VkSamplerYcbcrConversionCreateInfo   create_info{};
+    create_info.sType = VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_CREATE_INFO;
+    create_info.format = VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
+    create_info.ycbcrModel = VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_2020 ;
+    create_info.ycbcrRange = VK_SAMPLER_YCBCR_RANGE_ITU_FULL;
+//    // NV21
+//    create_info.components = {
+//            VK_COMPONENT_SWIZZLE_B,
+//            VK_COMPONENT_SWIZZLE_IDENTITY,
+//            VK_COMPONENT_SWIZZLE_R,
+//            VK_COMPONENT_SWIZZLE_IDENTITY,
+//    };
+    create_info.components = {
+            VK_COMPONENT_SWIZZLE_IDENTITY,
+            VK_COMPONENT_SWIZZLE_IDENTITY,
+            VK_COMPONENT_SWIZZLE_IDENTITY,
+            VK_COMPONENT_SWIZZLE_IDENTITY,
+    };
+    create_info.xChromaOffset = VK_CHROMA_LOCATION_MIDPOINT;
+    create_info.yChromaOffset = VK_CHROMA_LOCATION_MIDPOINT;
+    create_info.chromaFilter = VK_FILTER_LINEAR;
+    create_info.forceExplicitReconstruction = VK_FALSE;
+    return device_->CreateSamplerYcbcrConversion(&create_info);
+}
 
 void Nv12ImageTexture::CreateTextureImage() {
     AAsset* file = AAssetManager_open(asset_manager_,
                                       "texture_512x512.NV12", AASSET_MODE_BUFFER);
+    assert(file);
     size_t file_length = AAsset_getLength(file);
     char* file_content = new char[file_length];
     AAsset_read(file, file_content, file_length);
@@ -269,17 +466,14 @@ void Nv12ImageTexture::CreateTextureImage() {
     memcpy(data, file_content, image_size);
     staging_buffer_memory->UnmapMemory();
 
-    CreateImage(tex_width, tex_height, VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,
-                VK_IMAGE_TILING_OPTIMAL,
-                VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, texture_image_, texture_image_memory_);
+    CreateImage(tex_width, tex_height, texture_image_, texture_image_memory_);
 
-    TransitionImageLayout(texture_image_->image(), VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,
-                          VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    TransitionImageLayout(texture_image_->image(), VK_IMAGE_LAYOUT_UNDEFINED,
+                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
     CopyBufferToImage(staging_buffer->buffer(), texture_image_->image(),
                       static_cast<uint32_t>(tex_width), static_cast<uint32_t>(tex_height));
-    TransitionImageLayout(texture_image_->image(), VK_FORMAT_G8_B8R8_2PLANE_420_UNORM,
-                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    TransitionImageLayout(texture_image_->image(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
     VulkanLogicDevice::DestroyBuffer(&staging_buffer);
     VulkanLogicDevice::FreeMemory(&staging_buffer_memory);
@@ -298,44 +492,6 @@ void Nv12ImageTexture::CreateTextureImageView(const VkSamplerYcbcrConversionInfo
     view_info.subresourceRange.baseArrayLayer = 0;
     view_info.subresourceRange.layerCount = 1;
     texture_image_view_ = device_->CreateImageView(&view_info);
-}
-
-VulkanSamplerYcbcrConversion* Nv12ImageTexture::CreateSamplerYcbcrConversion() {
-     /* typedef struct VkSamplerYcbcrConversionCreateInfo {
-        VkStructureType                  sType;
-        const void*                      pNext;
-        VkFormat                         format;
-        VkSamplerYcbcrModelConversion    ycbcrModel;
-        VkSamplerYcbcrRange              ycbcrRange;
-        VkComponentMapping               components;
-        VkChromaLocation                 xChromaOffset;
-        VkChromaLocation                 yChromaOffset;
-        VkFilter                         chromaFilter;
-        VkBool32                         forceExplicitReconstruction;
-    } VkSamplerYcbcrConversionCreateInfo; */
-    VkSamplerYcbcrConversionCreateInfo   create_info{};
-    create_info.sType = VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_CREATE_INFO;
-    create_info.format = VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
-    create_info.ycbcrModel = VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_2020 ;
-    create_info.ycbcrRange = VK_SAMPLER_YCBCR_RANGE_ITU_FULL;
-//    // NV21
-//    create_info.components = {
-//            VK_COMPONENT_SWIZZLE_B,
-//            VK_COMPONENT_SWIZZLE_IDENTITY,
-//            VK_COMPONENT_SWIZZLE_R,
-//            VK_COMPONENT_SWIZZLE_IDENTITY,
-//    };
-    create_info.components = {
-            VK_COMPONENT_SWIZZLE_IDENTITY,
-            VK_COMPONENT_SWIZZLE_IDENTITY,
-            VK_COMPONENT_SWIZZLE_IDENTITY,
-            VK_COMPONENT_SWIZZLE_IDENTITY,
-    };
-    create_info.xChromaOffset = VK_CHROMA_LOCATION_MIDPOINT;
-    create_info.yChromaOffset = VK_CHROMA_LOCATION_MIDPOINT;
-    create_info.chromaFilter = VK_FILTER_LINEAR;
-    create_info.forceExplicitReconstruction = VK_FALSE;
-    return device_->CreateSamplerYcbcrConversion(&create_info);
 }
 
 void Nv12ImageTexture::CreateTextureSampler(const VkSamplerYcbcrConversionInfo* ycbcr_conversion_info) {
@@ -378,10 +534,9 @@ void Nv12ImageTexture::CreateTextureSampler(const VkSamplerYcbcrConversionInfo* 
     assert(texture_image_sampler_);
 }
 
-void Nv12ImageTexture::CreateImage(uint32_t width, uint32_t height, VkFormat format,
-                                   VkImageTiling tiling, VkImageUsageFlags usage,
-                                   VkMemoryPropertyFlags properties, VulkanImage*& image,
-                                   VulkanMemory*& image_memory) {
+void Nv12ImageTexture::CreateImage(uint32_t width, uint32_t height,
+                                   VulkanImage*& image, VulkanMemory*& image_memory) {
+
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageInfo.imageType = VK_IMAGE_TYPE_2D;
@@ -390,10 +545,10 @@ void Nv12ImageTexture::CreateImage(uint32_t width, uint32_t height, VkFormat for
     imageInfo.extent.depth = 1;
     imageInfo.mipLevels = 1;
     imageInfo.arrayLayers = 1;
-    imageInfo.format = format;
-    imageInfo.tiling = tiling;
+    imageInfo.format = VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
+    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
     imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    imageInfo.usage = usage;
+    imageInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
     imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
     imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     image = device_->CreateImage(&imageInfo);
@@ -416,7 +571,7 @@ void Nv12ImageTexture::CreateImage(uint32_t width, uint32_t height, VkFormat for
     image_memory->BindImageMemory(image->image(), 0);
 }
 
-void Nv12ImageTexture::TransitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout,
+void Nv12ImageTexture::TransitionImageLayout(VkImage image, VkImageLayout oldLayout,
                                              VkImageLayout newLayout) {
     VkCommandBufferAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -447,22 +602,19 @@ void Nv12ImageTexture::TransitionImageLayout(VkImage image, VkFormat format, VkI
     VkPipelineStageFlags sourceStage;
     VkPipelineStageFlags destinationStage;
 
-    if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+    if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED) {
         barrier.srcAccessMask = 0;
         barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
 
         sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
         destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-    } else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+    } else {
         barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
         barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
         sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
         destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-    } else {
-        throw std::invalid_argument("unsupported layout transition!");
     }
-
     command_buffer->CmdPipelineBarrier(
             sourceStage, destinationStage,
             0,
@@ -480,7 +632,7 @@ void Nv12ImageTexture::TransitionImageLayout(VkImage image, VkFormat format, VkI
 
     graphic_queue_->QueueSubmit( 1, &submitInfo, VK_NULL_HANDLE);
     graphic_queue_->QueueWaitIdle();
-    command_pool_->FreeCommandBuffer(&command_buffer);
+    VulkanCommandPool::FreeCommandBuffer(&command_buffer);
 }
 
 void Nv12ImageTexture::CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height) {
@@ -549,7 +701,7 @@ void Nv12ImageTexture::CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_
 
     graphic_queue_->QueueSubmit( 1, &submitInfo, VK_NULL_HANDLE);
     graphic_queue_->QueueWaitIdle();
-    command_pool_->FreeCommandBuffer(&command_buffer);
+    VulkanCommandPool::FreeCommandBuffer(&command_buffer);
 }
 
 VulkanDescriptorPool*  Nv12ImageTexture::CreateDescriptorPool() {
@@ -605,11 +757,6 @@ VulkanDescriptorSetLayout* Nv12ImageTexture::CreateDescriptorSetLayout() const {
     layout_info.bindingCount = 1;
     layout_info.pBindings = &layout_binding;
     return device_->CreateDescriptorSetLayout(&layout_info);
-}
-
-VulkanDescriptorSet* Nv12ImageTexture::CreateDescriptorSet(VulkanDescriptorPool* pool, VulkanDescriptorSetLayout* set_layout) {
-    VkDescriptorSetLayout set_layout1 = set_layout->descriptor_set_layout();
-    return pool->AllocateDescriptorSet(&set_layout1);
 }
 
 void Nv12ImageTexture::BindDescriptorSetWithBuffer() const {
@@ -763,7 +910,7 @@ VkPipelineVertexInputStateCreateInfo Nv12ImageTexture::GetPipelineVertexInputSta
     vertex_input_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
     vertex_input_info.vertexBindingDescriptionCount = static_cast<uint32_t>(vertex_binding_descriptions_.size());
     vertex_input_info.pVertexBindingDescriptions = vertex_binding_descriptions_.data(); // Optional
-    vertex_input_info.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertex_attribute_descriptions_.size());;
+    vertex_input_info.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertex_attribute_descriptions_.size());
     vertex_input_info.pVertexAttributeDescriptions = vertex_attribute_descriptions_.data();
     return vertex_input_info;
 }
@@ -778,7 +925,7 @@ VkPipelineInputAssemblyStateCreateInfo Nv12ImageTexture::GetPipelineInputAssembl
     } VkPipelineInputAssemblyStateCreateInfo;*/
     VkPipelineInputAssemblyStateCreateInfo input_assembly{};
     input_assembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    input_assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
+    input_assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     input_assembly.primitiveRestartEnable = VK_FALSE;
     return input_assembly;
 }

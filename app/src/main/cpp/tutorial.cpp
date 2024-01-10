@@ -32,7 +32,6 @@ Tutorial::Tutorial(AAssetManager* asset_manager) :
         graphic_queue_(nullptr),
         present_queue_(nullptr),
         swap_chain_(nullptr),
-        render_pass_(nullptr),
         graphic_command_pool_(nullptr),
         graphic_command_buffer_(nullptr),
         frame_available_semaphore_(nullptr),
@@ -75,14 +74,13 @@ void Tutorial::Run() {
     CreateLogicalDevice();
     CreateSwapChain(window_);
     CreateImageViews();
-    CreateRenderPass();
-    CreateFrameBuffers();
 
     CreateCommandPool();
     CreateCommandBuffer();
     CreateSyncObjects();
 
     CreateGraphicPipeline();
+    CreateFrameBuffers();
     int thread_state;
     std::unique_lock<std::mutex> lock(thread_state_mutex_);
     thread_state = thread_state_;
@@ -95,13 +93,11 @@ void Tutorial::Run() {
         lock.unlock();
     }
     logic_device_->DeviceWaitIdle();
+    DestroyFrameBuffers();
     DestroyGraphicPipeline();
-
     DestroySyncObjects();
     DestroyCommandBuffer();
     DestroyCommandPool();
-    DestroyFrameBuffers();
-    DestroyRenderPass();
     DestroyImageViews();
     DestroySwapChain();
     DestroyLogicalDevice();
@@ -227,25 +223,10 @@ void Tutorial::DestroyImageViews() {
     swap_chain_image_views_.clear();
 }
 
-void Tutorial::CreateRenderPass() {
-    std::vector<VkAttachmentDescription> attachments(1);
-    attachments[0] = CreateInfoFactory::GetAttachmentDescription(surface_format_.format);
-    VkAttachmentReference color_attachment_ref = CreateInfoFactory::GetAttachmentReference(0);
-    std::vector<VkSubpassDescription> subpasses(1);
-    subpasses[0] = CreateInfoFactory::GetSubpassDescription(color_attachment_ref);
-    std::vector<VkSubpassDependency> dependencies(1);
-    dependencies[0] = CreateInfoFactory::GetSubpassDependency();
-    VkRenderPassCreateInfo render_pass_info = CreateInfoFactory::GetRenderPassCreateInfo(attachments, subpasses, dependencies);
-    render_pass_ = logic_device_->CreateRenderPass(&render_pass_info);
-}
-
-void Tutorial::DestroyRenderPass() {
-    VulkanLogicDevice::DestroyRenderPass(&render_pass_);
-}
-
 void Tutorial::CreateGraphicPipeline() {
-    obj_ = new Nv12ImageTexture(asset_manager_, graphic_command_pool_, graphic_queue_, logic_device_);
-    obj_->CreatePipeline(render_pass_);
+    obj_ = new Nv12ImageTexture(asset_manager_, graphic_command_pool_, graphic_queue_, logic_device_,
+                                surface_format_.format, swap_chain_extent_);
+    obj_->CreatePipeline();
 }
 
 void Tutorial::DestroyGraphicPipeline() {
@@ -259,7 +240,7 @@ void Tutorial::CreateFrameBuffers() {
     for (size_t i = 0; i < swap_chain_image_views_.size(); i++) {
         std::vector<VkImageView> color_attachment;
         color_attachment.push_back(swap_chain_image_views_[i]->image_view());
-        VkFramebufferCreateInfo frame_buffer_create_info = CreateInfoFactory::GetFramebufferCreateInfo(render_pass_, color_attachment, swap_chain_extent_.width, swap_chain_extent_.height);
+        VkFramebufferCreateInfo frame_buffer_create_info = CreateInfoFactory::GetFramebufferCreateInfo(obj_->render_pass(), color_attachment, swap_chain_extent_.width, swap_chain_extent_.height);
         VulkanFrameBuffer* frame_buffer = logic_device_->CreateFrameBuffer(&frame_buffer_create_info);
         if (frame_buffer != nullptr) {
             frame_buffers_[i] = frame_buffer;
@@ -330,7 +311,7 @@ void Tutorial::DrawFrame() {
     logic_device_->WaitForFences( 1, &fence, VK_TRUE, UINT64_MAX);
 
     graphic_command_buffer_->ResetCommandBuffer(0);
-    obj_->Draw(graphic_command_buffer_, render_pass_, frame_buffers_[image_index], swap_chain_extent_.width, swap_chain_extent_.height);
+    obj_->Draw(graphic_command_buffer_, frame_buffers_[image_index]);
     /* typedef struct VkSubmitInfo {
         VkStructureType                sType;
         const void*                    pNext;

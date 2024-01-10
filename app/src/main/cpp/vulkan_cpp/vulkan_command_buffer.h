@@ -23,6 +23,10 @@ public:
     void CmdSetViewport(uint32_t viewport_count, const VkViewport* viewports) const;
     void CmdSetScissor(uint32_t scissor_count, const VkRect2D* scissors) const;
     void CmdDraw(uint32_t vertex_count, uint32_t instance_count, uint32_t first_vertex, uint32_t first_instance) const;
+    void CmdDrawIndexed(uint32_t index_count, uint32_t instance_count, uint32_t first_index,
+                        int32_t vertex_offset, uint32_t first_instance) const;
+
+    void CmdBindIndexBuffer(VkBuffer buffer, VkDeviceSize offset, VkIndexType index_type) const;
     void CmdBindVertexBuffers(uint32_t first_binding, uint32_t binding_count,
                               const VkBuffer* buffers,  const VkDeviceSize* offsets) const;
     void CmdBindDescriptorSets(VkPipelineBindPoint pipeline_bind_point,

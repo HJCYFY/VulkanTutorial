@@ -43,6 +43,10 @@ void VulkanCommandBuffer::CmdBindPipeline(VkPipelineBindPoint bind_point, VkPipe
     vkCmdBindPipeline(command_buffer_, bind_point, pipeline);
 }
 
+void VulkanCommandBuffer::CmdBindIndexBuffer(VkBuffer buffer, VkDeviceSize offset, VkIndexType index_type) const {
+    vkCmdBindIndexBuffer(command_buffer_, buffer, offset, index_type);
+}
+
 void VulkanCommandBuffer::CmdBindVertexBuffers(uint32_t first_binding, uint32_t binding_count,
                                                const VkBuffer* buffers,  const VkDeviceSize* offsets) const {
     vkCmdBindVertexBuffers(command_buffer_, first_binding, binding_count, buffers, offsets);
@@ -97,4 +101,9 @@ void VulkanCommandBuffer::CmdSetScissor(uint32_t scissor_count, const VkRect2D* 
 
 void VulkanCommandBuffer::CmdDraw(uint32_t vertex_count, uint32_t instance_count, uint32_t first_vertex, uint32_t first_instance) const {
     vkCmdDraw(command_buffer_, vertex_count, instance_count, first_vertex, first_instance);
+}
+
+void VulkanCommandBuffer::CmdDrawIndexed(uint32_t index_count, uint32_t instance_count, uint32_t first_index,
+                                         int32_t vertex_offset, uint32_t first_instance) const {
+    vkCmdDrawIndexed(command_buffer_, index_count, instance_count, first_index, vertex_offset, first_instance);
 }
