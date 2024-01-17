@@ -64,6 +64,7 @@ protected:
     VulkanPipeline* pipeline_;
 
     VulkanImage* depth_attachment_image_;
+    VulkanMemory* depth_attachment_image_memory_;
     VulkanImageView* depth_attachment_image_view_;
 
     std::string vertex_str_;

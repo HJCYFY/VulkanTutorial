@@ -16,6 +16,7 @@ public:
     void GetProperties(VkPhysicalDeviceProperties* device_properties) const;
     void GetFeatures(VkPhysicalDeviceFeatures * device_features) const;
     void GetFeatures2(VkPhysicalDeviceFeatures2 * device_features) const;
+    void GetFormatProperties(VkFormat format, VkFormatProperties* props) const;
 
     std::vector<VkExtensionProperties> EnumerateExtensionProperties() const;
 

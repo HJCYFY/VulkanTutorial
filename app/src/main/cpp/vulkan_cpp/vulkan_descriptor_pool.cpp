@@ -3,6 +3,7 @@
 //
 
 #include "vulkan_descriptor_pool.h"
+#include "log.h"
 
 
 VulkanDescriptorPool::VulkanDescriptorPool(VkDevice device, VkDescriptorPool descriptor_pool) :
@@ -37,6 +38,7 @@ VulkanDescriptorSet* VulkanDescriptorPool::AllocateDescriptorSet(const VkDescrip
         VulkanDescriptorSet* vulkan_descriptor_set = new VulkanDescriptorSet(device_, descriptor_pool_, descriptor_set);
         return vulkan_descriptor_set;
     }
+    LOG_D("", " Ret = %d\n", ret);
     return nullptr;
 }
 

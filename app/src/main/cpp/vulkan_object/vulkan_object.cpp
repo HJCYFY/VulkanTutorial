@@ -16,6 +16,7 @@ VulkanObject::VulkanObject(VulkanLogicDevice* device,
         render_pass_(nullptr),
         pipeline_(nullptr),
         depth_attachment_image_(nullptr),
+        depth_attachment_image_memory_(nullptr),
         depth_attachment_image_view_(nullptr) {
 }
 

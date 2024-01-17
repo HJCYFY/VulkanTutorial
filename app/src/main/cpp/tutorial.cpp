@@ -13,6 +13,8 @@
 #include "rotate_rectangle.h"
 #include "rgba_image_texture.h"
 #include "nv12_image_texture.h"
+#include "depth_triangle.h"
+#include "viking_room.h"
 
 void* thread_run(void* param) {
     auto* tutorial = (Tutorial*)param;
@@ -224,8 +226,12 @@ void Tutorial::DestroyImageViews() {
 }
 
 void Tutorial::CreateGraphicPipeline() {
-    obj_ = new Nv12ImageTexture(asset_manager_, graphic_command_pool_, graphic_queue_, logic_device_,
-                                surface_format_.format, swap_chain_extent_);
+    obj_ = new VikingRoom(asset_manager_,
+                          graphic_command_pool_,
+                             graphic_queue_,
+                             logic_device_,
+                             surface_format_.format,
+                             swap_chain_extent_);
     obj_->CreatePipeline();
 }
 
@@ -238,9 +244,13 @@ void Tutorial::DestroyGraphicPipeline() {
 void Tutorial::CreateFrameBuffers() {
     frame_buffers_.resize(swap_chain_image_views_.size());
     for (size_t i = 0; i < swap_chain_image_views_.size(); i++) {
-        std::vector<VkImageView> color_attachment;
-        color_attachment.push_back(swap_chain_image_views_[i]->image_view());
-        VkFramebufferCreateInfo frame_buffer_create_info = CreateInfoFactory::GetFramebufferCreateInfo(obj_->render_pass(), color_attachment, swap_chain_extent_.width, swap_chain_extent_.height);
+        std::vector<VkImageView> attachments;
+        attachments.push_back(swap_chain_image_views_[i]->image_view());
+        if (obj_->depth_attachment_image_view()) {
+            attachments.push_back(obj_->depth_attachment_image_view()->image_view());
+        }
+        VkFramebufferCreateInfo frame_buffer_create_info =
+                CreateInfoFactory::GetFramebufferCreateInfo(obj_->render_pass(), attachments, swap_chain_extent_.width, swap_chain_extent_.height);
         VulkanFrameBuffer* frame_buffer = logic_device_->CreateFrameBuffer(&frame_buffer_create_info);
         if (frame_buffer != nullptr) {
             frame_buffers_[i] = frame_buffer;

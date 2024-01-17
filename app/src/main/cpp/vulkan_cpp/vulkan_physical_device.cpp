@@ -35,6 +35,10 @@ void VulkanPhysicalDevice::GetFeatures2(VkPhysicalDeviceFeatures2 * device_featu
     }
 }
 
+void VulkanPhysicalDevice::GetFormatProperties(VkFormat format, VkFormatProperties* props) const {
+    vkGetPhysicalDeviceFormatProperties(device_, format, props);
+}
+
 std::vector<VkExtensionProperties> VulkanPhysicalDevice::EnumerateExtensionProperties() const {
     uint32_t extension_count;
     vkEnumerateDeviceExtensionProperties(device_, nullptr, &extension_count, nullptr);

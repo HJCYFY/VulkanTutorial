@@ -14,6 +14,8 @@ include_directories(${CMAKE_SOURCE_DIR}/inc)
 include_directories(${CMAKE_SOURCE_DIR}/inc/shaderc)
 include_directories(${CMAKE_SOURCE_DIR}/inc/stb)
 
+set(CMAKE_CXX_STANDARD 11)
+
 add_definitions(-DVK_USE_PLATFORM_ANDROID_KHR)
 
 link_directories(${CMAKE_SOURCE_DIR}/../jniLibs/${ANDROID_ABI})
