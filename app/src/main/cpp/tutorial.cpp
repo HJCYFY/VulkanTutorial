@@ -15,6 +15,7 @@
 #include "nv12_image_texture.h"
 #include "depth_triangle.h"
 #include "viking_room.h"
+#include "viking_room_mipmap.h"
 
 void* thread_run(void* param) {
     auto* tutorial = (Tutorial*)param;
@@ -140,11 +141,17 @@ bool Tutorial::pickPhysicalDevice() {
         }
     }
     if (find_physical_device) {
-        physical_device_->GetFeatures2(&physical_device_features_);
-        physical_device_->GetProperties(&physical_device_properties_);
         return true;
     }
     return false;
+}
+
+void Tutorial::QueryPhysicalDeviceInfo() {
+    physical_device_->GetFeatures2(&physical_device_features_);
+    physical_device_->GetProperties(&physical_device_properties_);
+
+    LOG_D("", "framebufferColorSampleCounts %u\n", physical_device_properties_.limits.framebufferColorSampleCounts);
+    LOG_D("", "framebufferDepthSampleCounts %u\n", physical_device_properties_.limits.framebufferDepthSampleCounts);
 }
 
 void Tutorial::CreateSurface(ANativeWindow* window) {
@@ -226,9 +233,7 @@ void Tutorial::DestroyImageViews() {
 }
 
 void Tutorial::CreateGraphicPipeline() {
-    obj_ = new VikingRoom(asset_manager_,
-                          graphic_command_pool_,
-                             graphic_queue_,
+    obj_ = new Rectangle(
                              logic_device_,
                              surface_format_.format,
                              swap_chain_extent_);

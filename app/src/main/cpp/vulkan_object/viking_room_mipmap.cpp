@@ -1,13 +1,12 @@
 //
-// Created by hj6231 on 2024/1/15.
+// Created by hj6231 on 2024/1/17.
 //
 
-#include "viking_room.h"
+#include "viking_room_mipmap.h"
+
 #include "log.h"
 
-#define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
-#define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
 #include <sstream>
 #include <map>
@@ -17,7 +16,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <array>
 
-const char VikingRoom::kVertShaderSource[] =
+const char VikingRoomMipmap::kVertShaderSource[] =
         "#version 450\n"
         "layout(binding = 0) uniform UniformBufferObject {\n"
         "    mat4 model;\n"
@@ -32,7 +31,7 @@ const char VikingRoom::kVertShaderSource[] =
         "    fragCoordinate = coordinate;\n"
         "}\n";
 
-const char VikingRoom::kFragShaderSource[] =
+const char VikingRoomMipmap::kFragShaderSource[] =
         "#version 450\n"
         "layout(binding = 1) uniform sampler2D texSampler;\n"
         "layout(location = 0) in vec2 fragCoordinate;\n"
@@ -41,7 +40,7 @@ const char VikingRoom::kFragShaderSource[] =
         "    outColor = texture(texSampler, fragCoordinate);\n"
         "}\n";
 
-VikingRoom::VikingRoom(AAssetManager* asset_manager,
+VikingRoomMipmap::VikingRoomMipmap(AAssetManager* asset_manager,
                        VulkanCommandPool* command_pool,
                        VulkanQueue* graphic_queue,
                        VulkanLogicDevice* device,
@@ -58,19 +57,20 @@ VikingRoom::VikingRoom(AAssetManager* asset_manager,
         indices_memory_(nullptr),
         mvp_buffer_(nullptr),
         mvp_memory_(nullptr) ,
-        uniform_buffer_mapped_(nullptr) ,
+        uniform_buffer_mapped_(nullptr),
+        mip_levels_(0),
         texture_image_(nullptr) ,
-        texture_image_memory_(nullptr) ,
-        texture_image_view_(nullptr) ,
-        texture_image_sampler_(nullptr) ,
-        descriptor_pool_(nullptr) ,
-        descriptor_set_layout_(nullptr) ,
+        texture_image_memory_(nullptr),
+        texture_image_view_(nullptr),
+        texture_image_sampler_(nullptr),
+        descriptor_pool_(nullptr),
+        descriptor_set_layout_(nullptr),
         descriptor_set_(nullptr) {
     vertex_str_ = kVertShaderSource;
     fragment_str_ = kFragShaderSource;
 }
 
-int VikingRoom::CreatePipeline() {
+int VikingRoomMipmap::CreatePipeline() {
     VulkanShaderModule* vert_shader_module;
     VulkanShaderModule* frag_shader_module;
     VulkanPipeline* pipeline;
@@ -118,7 +118,7 @@ int VikingRoom::CreatePipeline() {
     return -1;
 }
 
-void VikingRoom::DestroyPipeline() {
+void VikingRoomMipmap::DestroyPipeline() {
     if (pipeline_ != nullptr) {
         VulkanLogicDevice::DestroyPipelines(&pipeline_);
     }
@@ -135,7 +135,7 @@ void VikingRoom::DestroyPipeline() {
     DestroyMvpBuffer();
 }
 
-void VikingRoom::Draw(const VulkanCommandBuffer* command_buffer,
+void VikingRoomMipmap::Draw(const VulkanCommandBuffer* command_buffer,
                       const VulkanFrameBuffer* frame_buffer) const {
     CopyDataToUniformBuffer();
     /* typedef struct VkCommandBufferBeginInfo {
@@ -191,7 +191,7 @@ void VikingRoom::Draw(const VulkanCommandBuffer* command_buffer,
     command_buffer->EndCommandBuffer();
 }
 
-void VikingRoom::LoadResource() {
+void VikingRoomMipmap::LoadResource() {
     ReadVerticesIndexes();
     CreateMvpBuffer();
     CreateTextureImage();
@@ -200,7 +200,7 @@ void VikingRoom::LoadResource() {
     CreateDepthImageView();
 }
 
-void VikingRoom::CreateRenderPass() {
+void VikingRoomMipmap::CreateRenderPass() {
     /*typedef struct VkAttachmentDescription {
         VkAttachmentDescriptionFlags    flags;
         VkFormat                        format;
@@ -302,7 +302,7 @@ void VikingRoom::CreateRenderPass() {
     render_pass_ = device_->CreateRenderPass(&render_pass_info);
 }
 
-void VikingRoom::CreateVertexBuffer() {
+void VikingRoomMipmap::CreateVertexBuffer() {
     /* typedef struct VkBufferCreateInfo {
         VkStructureType        sType;
         const void*            pNext;
@@ -350,12 +350,12 @@ void VikingRoom::CreateVertexBuffer() {
     vertex_memory_->UnmapMemory();
 }
 
-void VikingRoom::DestroyVertexBuffer() {
+void VikingRoomMipmap::DestroyVertexBuffer() {
     VulkanLogicDevice::FreeMemory(&vertex_memory_);
     VulkanLogicDevice::DestroyBuffer(&vertex_buffer_);
 }
 
-void VikingRoom::CreateIndexBuffer() {
+void VikingRoomMipmap::CreateIndexBuffer() {
     /* typedef struct VkBufferCreateInfo {
         VkStructureType        sType;
         const void*            pNext;
@@ -403,12 +403,12 @@ void VikingRoom::CreateIndexBuffer() {
     indices_memory_->UnmapMemory();
 }
 
-void VikingRoom::DestroyIndexBuffer() {
+void VikingRoomMipmap::DestroyIndexBuffer() {
     VulkanLogicDevice::FreeMemory(&indices_memory_);
     VulkanLogicDevice::DestroyBuffer(&indices_buffer_);
 }
 
-void VikingRoom::CreateDescriptorSets() {
+void VikingRoomMipmap::CreateDescriptorSets() {
     descriptor_pool_ = CreateDescriptorPool();
     assert(descriptor_pool_);
     descriptor_set_layout_ = CreateDescriptorSetLayout();
@@ -421,7 +421,7 @@ void VikingRoom::CreateDescriptorSets() {
     BindTextureDescriptorSetWithImage();
 }
 
-void VikingRoom::ReadVerticesIndexes() {
+void VikingRoomMipmap::ReadVerticesIndexes() {
     AAsset* file = AAssetManager_open(asset_manager_,
                                       "viking_room.obj.txt", AASSET_MODE_BUFFER);
     assert(file);
@@ -462,7 +462,7 @@ void VikingRoom::ReadVerticesIndexes() {
     LOG_D("", "vertices_ %d \n", vertices_.size());
 }
 
-void VikingRoom::CreateMvpBuffer() {
+void VikingRoomMipmap::CreateMvpBuffer() {
     /* typedef struct VkBufferCreateInfo {
         VkStructureType        sType;
         const void*            pNext;
@@ -507,13 +507,13 @@ void VikingRoom::CreateMvpBuffer() {
     assert(ret == VK_SUCCESS);
 }
 
-void VikingRoom::DestroyMvpBuffer() {
+void VikingRoomMipmap::DestroyMvpBuffer() {
     mvp_memory_->UnmapMemory();
     VulkanLogicDevice::FreeMemory(&mvp_memory_);
     VulkanLogicDevice::DestroyBuffer(&mvp_buffer_);
 }
 
-void VikingRoom::CreateTextureImage() {
+void VikingRoomMipmap::CreateTextureImage() {
     AAsset* file = AAssetManager_open(asset_manager_,
                                       "viking_room.png", AASSET_MODE_BUFFER);
     size_t file_length = AAsset_getLength(file);
@@ -525,6 +525,8 @@ void VikingRoom::CreateTextureImage() {
     stbi_uc* pixels = stbi_load_from_memory((stbi_uc*)file_content, file_length, &tex_width, &tex_height, &tex_channels, STBI_rgb_alpha);
     delete[] file_content;
     VkDeviceSize image_size = tex_width * tex_height * 4;
+
+    mip_levels_ = static_cast<uint32_t>(std::floor(std::log2(std::max(tex_width, tex_height)))) + 1;
 
     VulkanBuffer* staging_buffer;
     VulkanMemory* staging_buffer_memory;
@@ -559,28 +561,29 @@ void VikingRoom::CreateTextureImage() {
     stbi_image_free(pixels);
 
     CreateImage(tex_width, tex_height, VK_FORMAT_R8G8B8A8_UNORM,
-                VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                texture_image_, texture_image_memory_);
+                VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                texture_image_, texture_image_memory_, mip_levels_);
 
     TransitionImageLayout(texture_image_->image(),
                           VK_IMAGE_LAYOUT_UNDEFINED,
-                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, mip_levels_);
     CopyBufferToImage(staging_buffer->buffer(), texture_image_->image(),
                       static_cast<uint32_t>(tex_width), static_cast<uint32_t>(tex_height));
-    TransitionImageLayout(texture_image_->image(),
-                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+//    TransitionImageLayout(texture_image_->image(),
+//                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+//                          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, mip_levels_);
 
     VulkanLogicDevice::DestroyBuffer(&staging_buffer);
     VulkanLogicDevice::FreeMemory(&staging_buffer_memory);
+    GenerateMipmaps(texture_image_->image(), tex_width, tex_height,mip_levels_);
 }
 
-void VikingRoom::DestroyTextureImage() {
+void VikingRoomMipmap::DestroyTextureImage() {
     VulkanLogicDevice::DestroyImage(&texture_image_);
     VulkanLogicDevice::FreeMemory(&texture_image_memory_);
 }
 
-void VikingRoom::CreateTextureImageViewAndSampler() {
+void VikingRoomMipmap::CreateTextureImageViewAndSampler() {
     VkImageViewCreateInfo view_info{};
     view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     view_info.image = texture_image_->image();
@@ -588,7 +591,7 @@ void VikingRoom::CreateTextureImageViewAndSampler() {
     view_info.format = VK_FORMAT_R8G8B8A8_UNORM;
     view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     view_info.subresourceRange.baseMipLevel = 0;
-    view_info.subresourceRange.levelCount = 1;
+    view_info.subresourceRange.levelCount = mip_levels_;
     view_info.subresourceRange.baseArrayLayer = 0;
     view_info.subresourceRange.layerCount = 1;
     texture_image_view_ = device_->CreateImageView(&view_info);
@@ -625,17 +628,19 @@ void VikingRoom::CreateTextureImageViewAndSampler() {
     sampler_info.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
     sampler_info.compareEnable = VK_FALSE;
     sampler_info.compareOp = VK_COMPARE_OP_ALWAYS;
+    sampler_info.minLod = 0;
+    sampler_info.maxLod = static_cast<float>(mip_levels_);
     sampler_info.unnormalizedCoordinates = VK_FALSE;
     texture_image_sampler_ = device_->CreateSampler(&sampler_info);
     assert(texture_image_sampler_);
 }
 
-void VikingRoom::DestroyTextureImageViewAndSampler() {
+void VikingRoomMipmap::DestroyTextureImageViewAndSampler() {
     VulkanLogicDevice::DestroySampler(&texture_image_sampler_);
     VulkanLogicDevice::DestroyImageView(&texture_image_view_);
 }
 
-void VikingRoom::CreateDepthImage() {
+void VikingRoomMipmap::CreateDepthImage() {
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageInfo.imageType = VK_IMAGE_TYPE_2D;
@@ -670,12 +675,12 @@ void VikingRoom::CreateDepthImage() {
     depth_attachment_image_memory_->BindImageMemory(depth_attachment_image_->image(), 0);
 }
 
-void VikingRoom::DestroyDepthImage() {
+void VikingRoomMipmap::DestroyDepthImage() {
     VulkanLogicDevice::FreeMemory(&depth_attachment_image_memory_);
     VulkanLogicDevice::DestroyImage(&depth_attachment_image_);
 }
 
-void VikingRoom::CreateDepthImageView() {
+void VikingRoomMipmap::CreateDepthImageView() {
     VkImageViewCreateInfo view_info{};
     view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     view_info.image = depth_attachment_image_->image();
@@ -689,11 +694,11 @@ void VikingRoom::CreateDepthImageView() {
     depth_attachment_image_view_ = device_->CreateImageView(&view_info);
 }
 
-void VikingRoom::DestroyDepthImageView() {
+void VikingRoomMipmap::DestroyDepthImageView() {
     VulkanLogicDevice::DestroyImageView(&depth_attachment_image_view_);
 }
 
-VulkanPipelineLayout* VikingRoom::CreatePipelineLayout(const std::vector<VkDescriptorSetLayout>& set_layouts) const {
+VulkanPipelineLayout* VikingRoomMipmap::CreatePipelineLayout(const std::vector<VkDescriptorSetLayout>& set_layouts) const {
     /*typedef struct VkPipelineLayoutCreateInfo {
         VkStructureType                 sType;
         const void*                     pNext;
@@ -712,10 +717,10 @@ VulkanPipelineLayout* VikingRoom::CreatePipelineLayout(const std::vector<VkDescr
     return device_->CreatePipelineLayout(&pipeline_layout_info);
 }
 
-VulkanPipeline* VikingRoom::CreateGraphicsPipeline(const VulkanShaderModule* vert_shader_module,
-                                                      const VulkanShaderModule* frag_shader_module,
-                                                      const VulkanPipelineLayout* layout,
-                                                      const VulkanRenderPass* render_pass) const {
+VulkanPipeline* VikingRoomMipmap::CreateGraphicsPipeline(const VulkanShaderModule* vert_shader_module,
+                                                   const VulkanShaderModule* frag_shader_module,
+                                                   const VulkanPipelineLayout* layout,
+                                                   const VulkanRenderPass* render_pass) const {
     /* typedef struct VkGraphicsPipelineCreateInfo {
         VkStructureType                                  sType;
         const void*                                      pNext;
@@ -769,16 +774,17 @@ VulkanPipeline* VikingRoom::CreateGraphicsPipeline(const VulkanShaderModule* ver
     return device_->CreateGraphicPipeline(&pipeline_info);
 }
 
-void VikingRoom::CreateImage(uint32_t width, uint32_t height, VkFormat format,
+void VikingRoomMipmap::CreateImage(uint32_t width, uint32_t height, VkFormat format,
                              VkImageTiling tiling, VkImageUsageFlags usage,
-                             VulkanImage*& image, VulkanMemory*& image_memory) const {
+                             VulkanImage*& image, VulkanMemory*& image_memory,
+                             uint32_t mip_levels) const {
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageInfo.imageType = VK_IMAGE_TYPE_2D;
     imageInfo.extent.width = width;
     imageInfo.extent.height = height;
     imageInfo.extent.depth = 1;
-    imageInfo.mipLevels = 1;
+    imageInfo.mipLevels = mip_levels;
     imageInfo.arrayLayers = 1;
     imageInfo.format = format;
     imageInfo.tiling = tiling;
@@ -799,15 +805,15 @@ void VikingRoom::CreateImage(uint32_t width, uint32_t height, VkFormat format,
     alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     alloc_info.allocationSize = mem_requirements.size;
     VkResult ret = VulkanLogicDevice::GetMemoryType(&mem_properties, mem_requirements.memoryTypeBits,
-                                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                     &alloc_info.memoryTypeIndex);
+                                                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                                    &alloc_info.memoryTypeIndex);
     assert(ret == VK_SUCCESS);
     image_memory = device_->AllocateMemory(&alloc_info);
     image_memory->BindImageMemory(image->image(), 0);
 }
 
-void VikingRoom::TransitionImageLayout(VkImage image, VkImageLayout oldLayout,
-                                       VkImageLayout newLayout) const {
+void VikingRoomMipmap::TransitionImageLayout(VkImage image, VkImageLayout oldLayout,
+                                       VkImageLayout newLayout, uint32_t mip_levels) const {
     VkCommandBufferAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
@@ -830,7 +836,7 @@ void VikingRoom::TransitionImageLayout(VkImage image, VkImageLayout oldLayout,
     barrier.image = image;
     barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     barrier.subresourceRange.baseMipLevel = 0;
-    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.levelCount = mip_levels;
     barrier.subresourceRange.baseArrayLayer = 0;
     barrier.subresourceRange.layerCount = 1;
 
@@ -871,7 +877,104 @@ void VikingRoom::TransitionImageLayout(VkImage image, VkImageLayout oldLayout,
     VulkanCommandPool::FreeCommandBuffer(&command_buffer);
 }
 
-void VikingRoom::CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height) const {
+void VikingRoomMipmap::GenerateMipmaps(VkImage image, int32_t texWidth, int32_t texHeight, uint32_t mipLevels) const {
+    VkCommandBufferAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandPool = command_pool_->command_pool();
+    allocInfo.commandBufferCount = 1;
+    VulkanCommandBuffer* command_buffer =
+            command_pool_->AllocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY);
+
+    VkCommandBufferBeginInfo begin_info{};
+    begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    command_buffer->BeginCommandBuffer(&begin_info);
+
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.image = image;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = 1;
+    barrier.subresourceRange.levelCount = 1;
+    int32_t mipWidth = texWidth;
+    int32_t mipHeight = texHeight;
+
+    for (uint32_t i = 1; i < mipLevels; i++) {
+        barrier.subresourceRange.baseMipLevel = i - 1;
+        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+
+        command_buffer->CmdPipelineBarrier(
+                             VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+                             0, nullptr,
+                             0, nullptr,
+                             1, &barrier);
+
+        VkImageBlit blit{};
+        blit.srcOffsets[0] = {0, 0, 0};
+        blit.srcOffsets[1] = {mipWidth, mipHeight, 1};
+        blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        blit.srcSubresource.mipLevel = i - 1;
+        blit.srcSubresource.baseArrayLayer = 0;
+        blit.srcSubresource.layerCount = 1;
+        blit.dstOffsets[0] = {0, 0, 0};
+        blit.dstOffsets[1] = { mipWidth > 1 ? mipWidth / 2 : 1, mipHeight > 1 ? mipHeight / 2 : 1, 1 };
+        blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        blit.dstSubresource.mipLevel = i;
+        blit.dstSubresource.baseArrayLayer = 0;
+        blit.dstSubresource.layerCount = 1;
+
+        command_buffer->CmdBlitImage(
+                       image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                       image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                       1, &blit,
+                       VK_FILTER_LINEAR);
+
+        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+        command_buffer->CmdPipelineBarrier(
+                             VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0,
+                             0, nullptr,
+                             0, nullptr,
+                             1, &barrier);
+
+        if (mipWidth > 1) mipWidth /= 2;
+        if (mipHeight > 1) mipHeight /= 2;
+    }
+    barrier.subresourceRange.baseMipLevel = mipLevels - 1;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+    command_buffer->CmdPipelineBarrier(
+                         VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0,
+                         0, nullptr,
+                         0, nullptr,
+                         1, &barrier);
+
+    command_buffer->EndCommandBuffer();
+    VkCommandBuffer command_buffers[] = {command_buffer->command_buffer()};
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = command_buffers;
+
+    graphic_queue_->QueueSubmit( 1, &submitInfo, VK_NULL_HANDLE);
+    graphic_queue_->QueueWaitIdle();
+    VulkanCommandPool::FreeCommandBuffer(&command_buffer);
+}
+
+void VikingRoomMipmap::CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height) const {
     VkCommandBufferAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
@@ -919,7 +1022,7 @@ void VikingRoom::CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t widt
     VulkanCommandPool::FreeCommandBuffer(&command_buffer);
 }
 
-VulkanDescriptorPool*  VikingRoom::CreateDescriptorPool() const {
+VulkanDescriptorPool*  VikingRoomMipmap::CreateDescriptorPool() const {
     /* typedef struct VkDescriptorPoolSize {
         VkDescriptorType    type;
         uint32_t            descriptorCount;
@@ -946,7 +1049,7 @@ VulkanDescriptorPool*  VikingRoom::CreateDescriptorPool() const {
     return device_->CreateDescriptorPool(&pool_info);
 }
 
-VulkanDescriptorSetLayout* VikingRoom::CreateDescriptorSetLayout() const {
+VulkanDescriptorSetLayout* VikingRoomMipmap::CreateDescriptorSetLayout() const {
     /* typedef struct VkDescriptorSetLayoutBinding {
         uint32_t              binding;
         VkDescriptorType      descriptorType;
@@ -978,7 +1081,7 @@ VulkanDescriptorSetLayout* VikingRoom::CreateDescriptorSetLayout() const {
     return device_->CreateDescriptorSetLayout(&layout_info);
 }
 
-void VikingRoom::BindTextureDescriptorSetWithImage() const {
+void VikingRoomMipmap::BindTextureDescriptorSetWithImage() const {
     /* typedef struct VkDescriptorImageInfo {
         VkSampler        sampler;
         VkImageView      imageView;
@@ -1013,7 +1116,7 @@ void VikingRoom::BindTextureDescriptorSetWithImage() const {
     device_->UpdateDescriptorSets(1, &descriptor_write);
 }
 
-void VikingRoom::BindMvpDescriptorSetWithBuffer() const {
+void VikingRoomMipmap::BindMvpDescriptorSetWithBuffer() const {
     /* typedef struct VkDescriptorBufferInfo {
         VkBuffer        buffer;
         VkDeviceSize    offset;
@@ -1048,7 +1151,7 @@ void VikingRoom::BindMvpDescriptorSetWithBuffer() const {
     device_->UpdateDescriptorSets(1, &descriptor_write);
 }
 
-void VikingRoom::CopyDataToUniformBuffer() const {
+void VikingRoomMipmap::CopyDataToUniformBuffer() const {
     static auto startTime = std::chrono::high_resolution_clock::now();
     auto currentTime = std::chrono::high_resolution_clock::now();
     float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
@@ -1060,7 +1163,7 @@ void VikingRoom::CopyDataToUniformBuffer() const {
     memcpy(uniform_buffer_mapped_, &ubo, sizeof(ubo));
 }
 
-std::vector<VkPipelineShaderStageCreateInfo> VikingRoom::GetPipelineShaderStageCreateInfos(
+std::vector<VkPipelineShaderStageCreateInfo> VikingRoomMipmap::GetPipelineShaderStageCreateInfos(
         const VulkanShaderModule* vert_shader_module, const VulkanShaderModule* frag_shader_module) {
     /*typedef struct VkPipelineShaderStageCreateInfo {
         VkStructureType                     sType;
@@ -1085,7 +1188,7 @@ std::vector<VkPipelineShaderStageCreateInfo> VikingRoom::GetPipelineShaderStageC
     return shader_stages;
 }
 
-VkPipelineVertexInputStateCreateInfo VikingRoom::GetPipelineVertexInputStateCreateInfo() const{
+VkPipelineVertexInputStateCreateInfo VikingRoomMipmap::GetPipelineVertexInputStateCreateInfo() const{
     /* typedef struct VkPipelineVertexInputStateCreateInfo {
         VkStructureType                             sType;
         const void*                                 pNext;
@@ -1104,7 +1207,7 @@ VkPipelineVertexInputStateCreateInfo VikingRoom::GetPipelineVertexInputStateCrea
     return vertex_input_info;
 }
 
-VkPipelineInputAssemblyStateCreateInfo VikingRoom::GetPipelineInputAssemblyStateCreateInfo() {
+VkPipelineInputAssemblyStateCreateInfo VikingRoomMipmap::GetPipelineInputAssemblyStateCreateInfo() {
     /*typedef struct VkPipelineInputAssemblyStateCreateInfo {
         VkStructureType                            sType;
         const void*                                pNext;
@@ -1119,7 +1222,7 @@ VkPipelineInputAssemblyStateCreateInfo VikingRoom::GetPipelineInputAssemblyState
     return input_assembly;
 }
 
-VkPipelineViewportStateCreateInfo VikingRoom::GetPipelineViewportStateCreateInfo() {
+VkPipelineViewportStateCreateInfo VikingRoomMipmap::GetPipelineViewportStateCreateInfo() {
     /*typedef struct VkPipelineViewportStateCreateInfo {
         VkStructureType                       sType;
         const void*                           pNext;
@@ -1136,7 +1239,7 @@ VkPipelineViewportStateCreateInfo VikingRoom::GetPipelineViewportStateCreateInfo
     return viewportState;
 }
 
-VkPipelineRasterizationStateCreateInfo VikingRoom::GetPipelineRasterizationStateCreateInfo() {
+VkPipelineRasterizationStateCreateInfo VikingRoomMipmap::GetPipelineRasterizationStateCreateInfo() {
     /* typedef struct VkPipelineRasterizationStateCreateInfo {
         VkStructureType                            sType;
         const void*                                pNext;
@@ -1167,7 +1270,7 @@ VkPipelineRasterizationStateCreateInfo VikingRoom::GetPipelineRasterizationState
     return rasterizer;
 }
 
-VkPipelineMultisampleStateCreateInfo VikingRoom::GetPipelineMultisampleStateCreateInfo() {
+VkPipelineMultisampleStateCreateInfo VikingRoomMipmap::GetPipelineMultisampleStateCreateInfo() {
     /* typedef struct VkPipelineMultisampleStateCreateInfo {
         VkStructureType                          sType;
         const void*                              pNext;
@@ -1190,7 +1293,7 @@ VkPipelineMultisampleStateCreateInfo VikingRoom::GetPipelineMultisampleStateCrea
     return multisample;
 }
 
-VkPipelineDepthStencilStateCreateInfo VikingRoom::GetPipelineDepthStencilStateCreateInfo() {
+VkPipelineDepthStencilStateCreateInfo VikingRoomMipmap::GetPipelineDepthStencilStateCreateInfo() {
     /* typedef struct VkPipelineDepthStencilStateCreateInfo {
         VkStructureType                           sType;
         const void*                               pNext;
@@ -1220,7 +1323,7 @@ VkPipelineDepthStencilStateCreateInfo VikingRoom::GetPipelineDepthStencilStateCr
     return depth_stencil;
 }
 
-VkPipelineColorBlendStateCreateInfo VikingRoom::GetPipelineColorBlendStateCreateInfo(
+VkPipelineColorBlendStateCreateInfo VikingRoomMipmap::GetPipelineColorBlendStateCreateInfo(
         const VkPipelineColorBlendAttachmentState* color_blend_attachment) {
     /* typedef struct VkPipelineColorBlendStateCreateInfo {
         VkStructureType                               sType;
@@ -1245,7 +1348,7 @@ VkPipelineColorBlendStateCreateInfo VikingRoom::GetPipelineColorBlendStateCreate
     return color_blending;
 }
 
-VkPipelineColorBlendAttachmentState VikingRoom::GetPipelineColorBlendAttachmentState() {
+VkPipelineColorBlendAttachmentState VikingRoomMipmap::GetPipelineColorBlendAttachmentState() {
     /* typedef struct VkPipelineColorBlendAttachmentState {
         VkBool32                 blendEnable;
         VkBlendFactor            srcColorBlendFactor;
@@ -1268,7 +1371,7 @@ VkPipelineColorBlendAttachmentState VikingRoom::GetPipelineColorBlendAttachmentS
     return color_blend_attachment;
 }
 
-VkPipelineDynamicStateCreateInfo VikingRoom::GetPipelineDynamicStateCreateInfo(const std::vector<VkDynamicState>& dynamic_states) {
+VkPipelineDynamicStateCreateInfo VikingRoomMipmap::GetPipelineDynamicStateCreateInfo(const std::vector<VkDynamicState>& dynamic_states) {
     /* typedef struct VkPipelineDynamicStateCreateInfo {
         VkStructureType                      sType;
         const void*                          pNext;

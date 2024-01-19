@@ -1,5 +1,5 @@
 //
-// Created by hj6231 on 2024/1/15.
+// Created by hj6231 on 2024/1/17.
 //
 
 #pragma once
@@ -9,16 +9,16 @@
 #include <android/asset_manager.h>
 #include <android/asset_manager_jni.h>
 
-class VikingRoom  : public VulkanObject {
+class VikingRoomMipmap : public VulkanObject {
 public:
-    VikingRoom(AAssetManager* asset_manager,
-               VulkanCommandPool* command_pool,
-               VulkanQueue* graphic_queue,
-               VulkanLogicDevice* device,
-               VkFormat swap_chain_image_format,
-               VkExtent2D frame_buffer_size);
+    VikingRoomMipmap(AAssetManager* asset_manager,
+    VulkanCommandPool* command_pool,
+            VulkanQueue* graphic_queue,
+    VulkanLogicDevice* device,
+            VkFormat swap_chain_image_format,
+    VkExtent2D frame_buffer_size);
 
-    ~VikingRoom() = default;
+    ~VikingRoomMipmap() = default;
     int CreatePipeline() override;
     void DestroyPipeline() override;
 
@@ -68,10 +68,11 @@ private:
                                            const VulkanPipelineLayout* layout,
                                            const VulkanRenderPass* render_pass) const;
     void CreateImage(uint32_t width, uint32_t height, VkFormat format,
-                 VkImageTiling tiling, VkImageUsageFlags usage,
-                 VulkanImage*& image, VulkanMemory*& image_memory) const;
+                     VkImageTiling tiling, VkImageUsageFlags usage,
+                     VulkanImage*& image, VulkanMemory*& image_memory, uint32_t mip_levels = 1) const;
     void TransitionImageLayout(VkImage image, VkImageLayout oldLayout,
-                               VkImageLayout newLayout) const;
+                               VkImageLayout newLayout, uint32_t mip_levels) const;
+    void GenerateMipmaps(VkImage image, int32_t texWidth, int32_t texHeight, uint32_t mipLevels) const;
     void CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height) const;
 
     VulkanDescriptorPool*  CreateDescriptorPool() const;
@@ -113,6 +114,7 @@ private:
     VulkanMemory* mvp_memory_;
     void* uniform_buffer_mapped_;
 
+    uint32_t mip_levels_;
     VulkanImage* texture_image_;
     VulkanMemory* texture_image_memory_;
     VulkanImageView* texture_image_view_;
@@ -133,3 +135,4 @@ private:
             {0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(vertex_t, pos)},
             {1, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(vertex_t, coordinate)}};
 };
+

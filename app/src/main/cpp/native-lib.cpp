@@ -15,6 +15,7 @@ Java_com_arcsoft_myapplication_VulkanTutorial_create (
     auto* tutorial = new Tutorial(a_asset_manager);
     tutorial->CreateInstance();
     tutorial->pickPhysicalDevice();
+    tutorial->QueryPhysicalDeviceInfo();
     return  (jlong)tutorial;
 }
 

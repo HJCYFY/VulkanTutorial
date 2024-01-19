@@ -27,6 +27,7 @@ public:
     void CreateInstance();
     void DestroyInstance();
     bool pickPhysicalDevice();
+    void QueryPhysicalDeviceInfo();
 
     // TEST
 //    void TestAOTCompilation(AAssetManager* asset_manager);

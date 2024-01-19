@@ -51,6 +51,8 @@ public:
                               VkImageLayout dst_image_layout,
                               uint32_t region_count,
                               const VkBufferImageCopy* regions);
+    void CmdBlitImage(VkImage src, VkImageLayout src_layout, VkImage dst, VkImageLayout dst_layout,
+                      uint32_t region_count, const VkImageBlit* regions, VkFilter filter);
 
     VulkanCommandBuffer& operator = (const VulkanCommandBuffer&) = delete;
 private:

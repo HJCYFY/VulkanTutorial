@@ -91,6 +91,11 @@ void VulkanCommandBuffer::CmdCopyBufferToImage(VkBuffer src_buffer, VkImage dst_
                            dst_image_layout, region_count, regions);
 }
 
+void VulkanCommandBuffer::CmdBlitImage(VkImage src, VkImageLayout src_layout, VkImage dst, VkImageLayout dst_layout,
+                                       uint32_t region_count, const VkImageBlit* regions, VkFilter filter) {
+    vkCmdBlitImage(command_buffer_, src, src_layout, dst, dst_layout, region_count, regions, filter);
+}
+
 void VulkanCommandBuffer::CmdSetViewport(uint32_t viewport_count, const VkViewport* viewports) const {
     vkCmdSetViewport(command_buffer_, 0, viewport_count, viewports);
 }
