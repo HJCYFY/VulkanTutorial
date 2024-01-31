@@ -96,6 +96,10 @@ void VulkanCommandBuffer::CmdBlitImage(VkImage src, VkImageLayout src_layout, Vk
     vkCmdBlitImage(command_buffer_, src, src_layout, dst, dst_layout, region_count, regions, filter);
 }
 
+void VulkanCommandBuffer::CmdDispatch(uint32_t group_count_x, uint32_t group_count_y, uint32_t group_count_z) const {
+    vkCmdDispatch(command_buffer_, group_count_x, group_count_y, group_count_z);
+}
+
 void VulkanCommandBuffer::CmdSetViewport(uint32_t viewport_count, const VkViewport* viewports) const {
     vkCmdSetViewport(command_buffer_, 0, viewport_count, viewports);
 }

@@ -15,6 +15,9 @@ VulkanObject::VulkanObject(VulkanLogicDevice* device,
         frame_buffer_size_(frame_buffer_size),
         render_pass_(nullptr),
         pipeline_(nullptr),
+        color_attachment_image_(nullptr),
+        color_attachment_image_memory_(nullptr),
+        color_attachment_image_view_(nullptr),
         depth_attachment_image_(nullptr),
         depth_attachment_image_memory_(nullptr),
         depth_attachment_image_view_(nullptr) {
@@ -49,6 +52,10 @@ VkRect2D VulkanObject::GetScissor() const {
 
 VulkanRenderPass* VulkanObject::render_pass() {
     return render_pass_;
+}
+
+VulkanImageView* VulkanObject::color_attachment_image_view() {
+    return color_attachment_image_view_;
 }
 
 VulkanImageView* VulkanObject::depth_attachment_image_view() {

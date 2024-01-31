@@ -3,30 +3,24 @@
 //
 
 #pragma once
-#include <pthread.h>
-#include <mutex>
-#include <android/asset_manager.h>
-#include <android/asset_manager_jni.h>
-#include <android/native_window_jni.h>
 #include "create_info_factory.h"
 #include "vulkan_instance.h"
 #include "vulkan_physical_device.h"
 #include "vulkan_surface.h"
 #include "vulkan_swap_chain.h"
+#include "tutorial_base.h"
 
 #include "vulkan_object.h"
 
-class Tutorial {
+class Tutorial : public TutorialBase {
 public:
     Tutorial(AAssetManager * asset_manager);
     ~Tutorial() = default;
-    void StartThread(ANativeWindow* window);
-    void StopThread();
-    void Run();
+    void Run() override;
 
-    void CreateInstance();
-    void DestroyInstance();
-    bool pickPhysicalDevice();
+    void CreateInstance() override;
+    void DestroyInstance() override;
+    bool PickPhysicalDevice() override;
     void QueryPhysicalDeviceInfo();
 
     // TEST
@@ -58,11 +52,6 @@ private:
     VkPresentModeKHR ChooseSwapPresentMode();
     VkExtent2D ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities, ANativeWindow* window);
 
-    AAssetManager * asset_manager_;
-    pthread_t thread_;
-    std::mutex thread_state_mutex_;
-    int thread_state_;
-    ANativeWindow* window_;
     CreateInfoFactory create_info_factory_;
 
     VulkanInstance* instance_;

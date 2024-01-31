@@ -192,6 +192,20 @@ VulkanPipeline* VulkanLogicDevice::CreateGraphicPipeline(const VkGraphicsPipelin
     return nullptr;
 }
 
+VulkanPipeline* VulkanLogicDevice::CreateComputePipeline(const VkComputePipelineCreateInfo *info) const {
+    VkPipeline pipeline;
+    VkResult ret = vkCreateComputePipelines(device_,
+                                            VK_NULL_HANDLE,
+                                            1,
+                                            info,
+                                            nullptr,
+                                            &pipeline);
+    if (ret == VK_SUCCESS) {
+        return new VulkanPipeline(device_, pipeline);
+    }
+    return nullptr;
+}
+
 void VulkanLogicDevice::DestroyPipelines(VulkanPipeline** pipeline) {
     if (*pipeline) {
         delete *pipeline;

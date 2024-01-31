@@ -31,8 +31,14 @@ public:
     virtual VkRect2D GetScissor() const;
 
     VulkanRenderPass* render_pass();
+    VulkanImageView* color_attachment_image_view();
     VulkanImageView* depth_attachment_image_view();
     VulkanPipeline* pipeline();
+
+    static std::vector<uint32_t> CompileFile(const std::string& source_name,
+                                             shaderc_shader_kind kind,
+                                             const std::string& source,
+                                             bool optimize = false);
 protected:
     virtual void LoadResource() = 0;
     virtual void CreateRenderPass() = 0;
@@ -46,10 +52,6 @@ protected:
 
     virtual void CreateDescriptorSets() = 0;
 
-    static std::vector<uint32_t> CompileFile(const std::string& source_name,
-                                             shaderc_shader_kind kind,
-                                             const std::string& source,
-                                             bool optimize = false);
 
     VulkanShaderModule* CreateShaderModule(const std::string& name,
                                            shaderc_shader_kind kind,
@@ -62,6 +64,10 @@ protected:
     VulkanRenderPass* render_pass_;
 
     VulkanPipeline* pipeline_;
+
+    VulkanImage* color_attachment_image_;
+    VulkanMemory* color_attachment_image_memory_;
+    VulkanImageView* color_attachment_image_view_;
 
     VulkanImage* depth_attachment_image_;
     VulkanMemory* depth_attachment_image_memory_;

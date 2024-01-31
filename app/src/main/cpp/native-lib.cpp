@@ -4,6 +4,7 @@
 #include <android/asset_manager.h>
 #include <android/asset_manager_jni.h>
 #include "tutorial.h"
+#include "computer_shader.h"
 #include "log.h"
 
 extern "C" JNIEXPORT jlong JNICALL
@@ -12,10 +13,9 @@ Java_com_arcsoft_myapplication_VulkanTutorial_create (
         jobject,
         jobject asset_manager) {
     AAssetManager * a_asset_manager = AAssetManager_fromJava(env, asset_manager);
-    auto* tutorial = new Tutorial(a_asset_manager);
+    auto* tutorial = new ComputerShader(a_asset_manager);
     tutorial->CreateInstance();
-    tutorial->pickPhysicalDevice();
-    tutorial->QueryPhysicalDeviceInfo();
+    tutorial->PickPhysicalDevice();
     return  (jlong)tutorial;
 }
 
@@ -25,7 +25,7 @@ Java_com_arcsoft_myapplication_VulkanTutorial_destroy (
         jobject /* this */,
         jlong handle) {
     (void)env;
-    auto* tutorial = (Tutorial*)handle;
+    auto* tutorial = (TutorialBase*)handle;
     tutorial->DestroyInstance();
     delete tutorial;
 }
@@ -42,7 +42,7 @@ Java_com_arcsoft_myapplication_VulkanTutorial_surfaceCreated (
         return;
     }
 
-    auto* tutorial = (Tutorial*)handle;
+    auto* tutorial = (TutorialBase*)handle;
     tutorial->StartThread(window);
 }
 extern "C" JNIEXPORT void JNICALL
@@ -59,7 +59,7 @@ Java_com_arcsoft_myapplication_VulkanTutorial_surfaceDestroyed (
         jobject /* this */,
         jlong handle) {
     (void)env;
-    auto* tutorial = (Tutorial*)handle;
+    auto* tutorial = (TutorialBase*)handle;
     tutorial->StopThread();
 }
 

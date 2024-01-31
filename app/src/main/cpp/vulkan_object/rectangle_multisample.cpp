@@ -1,15 +1,15 @@
 //
-// Created by hj6231 on 2024/1/2.
+// Created by hj6231 on 2024/1/19.
 //
 
-#include "rotate_rectangle.h"
+#include "rectangle_multisample.h"
 
 #define GLM_FORCE_RADIANS
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <chrono>
 
-const char RotateRectangle::kVertShaderSource[] =
+const char RectangleMultisample::kVertShaderSource[] =
         "#version 450\n"
         "layout(binding = 0) uniform UniformBufferObject {\n"
         "    mat4 model;\n"
@@ -24,7 +24,7 @@ const char RotateRectangle::kVertShaderSource[] =
         "    fragColor = inColor;\n"
         "}\n";
 
-const char RotateRectangle::kFragShaderSource[] =
+const char RectangleMultisample::kFragShaderSource[] =
         "#version 450\n"
         "layout(location = 0) in vec3 fragColor;\n"
         "layout(location = 0) out vec4 outColor;\n"
@@ -32,7 +32,7 @@ const char RotateRectangle::kFragShaderSource[] =
         "    outColor = vec4(fragColor, 1.0);\n"
         "}\n";
 
-RotateRectangle::RotateRectangle(VulkanLogicDevice* device,
+RectangleMultisample::RectangleMultisample(VulkanLogicDevice* device,
                                  VkFormat swap_chain_image_format,
                                  VkExtent2D frame_buffer_size) :
         VulkanObject(device, swap_chain_image_format, frame_buffer_size),
@@ -49,7 +49,7 @@ RotateRectangle::RotateRectangle(VulkanLogicDevice* device,
     fragment_str_ = kFragShaderSource;
 }
 
-int RotateRectangle::CreatePipeline() {
+int RectangleMultisample::CreatePipeline() {
     VulkanShaderModule* vert_shader_module;
     VulkanShaderModule* frag_shader_module;
     VulkanPipeline* pipeline;
@@ -92,7 +92,7 @@ int RotateRectangle::CreatePipeline() {
     return -1;
 }
 
-void RotateRectangle::DestroyPipeline() {
+void RectangleMultisample::DestroyPipeline() {
     vulkan_descriptor_pool_->FreeDescriptorSet(&vulkan_descriptor_set_);
     VulkanLogicDevice::DestroyDescriptorPool(&vulkan_descriptor_pool_);
     UnmapAndDestroyUniformBuffer();
@@ -102,11 +102,12 @@ void RotateRectangle::DestroyPipeline() {
         VulkanLogicDevice::DestroyPipelines(&pipeline_);
     }
     VulkanLogicDevice::DestroyDescriptorSetLayout(&descriptor_set_layout_);
+    DestroyColorAttachment();
 }
 
-void RotateRectangle::Draw(const VulkanCommandBuffer* command_buffer,
-                     const VulkanFrameBuffer* frame_buffer) const {
-    CopyDataToUniformBuffer();
+void RectangleMultisample::Draw(const VulkanCommandBuffer* command_buffer,
+                           const VulkanFrameBuffer* frame_buffer) const {
+//    CopyDataToUniformBuffer();
     /* typedef struct VkCommandBufferBeginInfo {
         VkStructureType                          sType;
         const void*                              pNext;
@@ -153,12 +154,13 @@ void RotateRectangle::Draw(const VulkanCommandBuffer* command_buffer,
     command_buffer->EndCommandBuffer();
 }
 
-void RotateRectangle::LoadResource() {
+void RectangleMultisample::LoadResource() {
     CreateUniformBufferAndMap();
     CopyDataToUniformBuffer();
+    CreateColorAttachment();
 }
 
-void RotateRectangle::CreateRenderPass() {
+void RectangleMultisample::CreateRenderPass() {
     /*typedef struct VkAttachmentDescription {
         VkAttachmentDescriptionFlags    flags;
         VkFormat                        format;
@@ -172,21 +174,36 @@ void RotateRectangle::CreateRenderPass() {
     } VkAttachmentDescription;*/
     VkAttachmentDescription color_attachment{};
     color_attachment.format = swap_chain_image_format_;
-    color_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    color_attachment.samples = VK_SAMPLE_COUNT_4_BIT;
     color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     color_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     color_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     color_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    color_attachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    color_attachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
+    VkAttachmentDescription color_attachment_resolve{};
+    color_attachment_resolve.format = swap_chain_image_format_;
+    color_attachment_resolve.samples = VK_SAMPLE_COUNT_1_BIT;
+    color_attachment_resolve.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    color_attachment_resolve.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    color_attachment_resolve.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    color_attachment_resolve.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    color_attachment_resolve.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    color_attachment_resolve.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+    VkAttachmentDescription attachments[] = {color_attachment, color_attachment_resolve};
     /*typedef struct VkAttachmentReference {
         uint32_t         attachment;
         VkImageLayout    layout;
     } VkAttachmentReference;*/
     VkAttachmentReference color_attachment_ref{};
-    color_attachment_ref.attachment = 0;
+    color_attachment_ref.attachment = 1;
     color_attachment_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    VkAttachmentReference color_attachment_resolve_ref{};
+    color_attachment_resolve_ref.attachment = 0;
+    color_attachment_resolve_ref.layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
     /*typedef struct VkSubpassDescription {
         VkSubpassDescriptionFlags       flags;
@@ -204,6 +221,7 @@ void RotateRectangle::CreateRenderPass() {
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpass.colorAttachmentCount = 1;
     subpass.pColorAttachments = &color_attachment_ref;
+    subpass.pResolveAttachments = &color_attachment_resolve_ref;
 
     /* typedef struct VkSubpassDependency {
         uint32_t                srcSubpass;
@@ -235,8 +253,8 @@ void RotateRectangle::CreateRenderPass() {
     } VkRenderPassCreateInfo; */
     VkRenderPassCreateInfo render_pass_info{};
     render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    render_pass_info.attachmentCount = 1;
-    render_pass_info.pAttachments = &color_attachment;
+    render_pass_info.attachmentCount = 2;
+    render_pass_info.pAttachments = attachments;
     render_pass_info.subpassCount = 1;
     render_pass_info.pSubpasses = &subpass;
     render_pass_info.dependencyCount = 1;
@@ -244,7 +262,7 @@ void RotateRectangle::CreateRenderPass() {
     render_pass_ = device_->CreateRenderPass(&render_pass_info);
 }
 
-VulkanDescriptorSetLayout* RotateRectangle::CreateDescriptorSetLayout() const {
+VulkanDescriptorSetLayout* RectangleMultisample::CreateDescriptorSetLayout() const {
     /* typedef struct VkDescriptorSetLayoutBinding {
         uint32_t              binding;
         VkDescriptorType      descriptorType;
@@ -272,7 +290,7 @@ VulkanDescriptorSetLayout* RotateRectangle::CreateDescriptorSetLayout() const {
     return device_->CreateDescriptorSetLayout(&layout_info);
 }
 
-void RotateRectangle::CreateVertexBuffer() {
+void RectangleMultisample::CreateVertexBuffer() {
     /* typedef struct VkBufferCreateInfo {
         VkStructureType        sType;
         const void*            pNext;
@@ -318,12 +336,12 @@ void RotateRectangle::CreateVertexBuffer() {
     vertex_memory_->UnmapMemory();
 }
 
-void RotateRectangle::DestroyVertexBuffer() {
+void RectangleMultisample::DestroyVertexBuffer() {
     VulkanLogicDevice::FreeMemory(&vertex_memory_);
     VulkanLogicDevice::DestroyBuffer(&vertex_buffer_);
 }
 
-void RotateRectangle::CreateDescriptorSets() {
+void RectangleMultisample::CreateDescriptorSets() {
     vulkan_descriptor_pool_ = CreateDescriptorPool();
     assert(vulkan_descriptor_pool_);
     descriptor_set_layout_ = CreateDescriptorSetLayout();
@@ -333,7 +351,60 @@ void RotateRectangle::CreateDescriptorSets() {
     BindDescriptorSetWithBuffer();
 }
 
-void RotateRectangle::CreateUniformBufferAndMap() {
+void RectangleMultisample::CreateColorAttachment() {
+    VkImageCreateInfo imageInfo{};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageInfo.extent.width = frame_buffer_size_.width;
+    imageInfo.extent.height = frame_buffer_size_.height;
+    imageInfo.extent.depth = 1;
+    imageInfo.mipLevels = 1;
+    imageInfo.arrayLayers = 1;
+    imageInfo.format = swap_chain_image_format_;
+    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    imageInfo.usage = VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    imageInfo.samples = VK_SAMPLE_COUNT_4_BIT;
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    color_attachment_image_ = device_->CreateImage(&imageInfo);
+    assert(color_attachment_image_);
+
+    VkMemoryRequirements mem_requirements;
+    color_attachment_image_->GetImageMemoryRequirements(&mem_requirements);
+
+    VkPhysicalDeviceMemoryProperties mem_properties{};
+    device_->GetPhysicalDeviceMemoryProperties(&mem_properties);
+
+    VkMemoryAllocateInfo alloc_info{};
+    alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    alloc_info.allocationSize = mem_requirements.size;
+    VkResult ret = VulkanLogicDevice::GetMemoryType(&mem_properties, mem_requirements.memoryTypeBits,
+                                                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                                    &alloc_info.memoryTypeIndex);
+    assert(ret == VK_SUCCESS);
+    color_attachment_image_memory_ = device_->AllocateMemory(&alloc_info);
+    color_attachment_image_memory_->BindImageMemory(color_attachment_image_->image(), 0);
+
+    VkImageViewCreateInfo view_info{};
+    view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    view_info.image = color_attachment_image_->image();
+    view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    view_info.format = VK_FORMAT_R8G8B8A8_UNORM;
+    view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    view_info.subresourceRange.baseMipLevel = 0;
+    view_info.subresourceRange.levelCount = 1;
+    view_info.subresourceRange.baseArrayLayer = 0;
+    view_info.subresourceRange.layerCount = 1;
+    color_attachment_image_view_ = device_->CreateImageView(&view_info);
+}
+
+void RectangleMultisample::DestroyColorAttachment() {
+    VulkanLogicDevice::DestroyImageView(&color_attachment_image_view_);
+    VulkanLogicDevice::FreeMemory(&color_attachment_image_memory_);
+    VulkanLogicDevice::DestroyImage(&color_attachment_image_);
+}
+
+void RectangleMultisample::CreateUniformBufferAndMap() {
 /* typedef struct VkBufferCreateInfo {
         VkStructureType        sType;
         const void*            pNext;
@@ -376,25 +447,22 @@ void RotateRectangle::CreateUniformBufferAndMap() {
     uniform_memory_->MapMemory(0, mem_requirements.size, &uniform_buffer_mapped_);
 }
 
-void RotateRectangle::CopyDataToUniformBuffer() const {
-    static auto startTime = std::chrono::high_resolution_clock::now();
-    auto currentTime = std::chrono::high_resolution_clock::now();
-    float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
+void RectangleMultisample::CopyDataToUniformBuffer() const {
     mvp_t ubo;
-    ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-    ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    ubo.model = glm::rotate(glm::mat4(1.0f), glm::radians(3.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    ubo.view = glm::lookAt(glm::vec3(0.0f, 0.1f, 3.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
     ubo.project = glm::perspective(glm::radians(45.0f), (float)frame_buffer_size_.width/(float)frame_buffer_size_.height, 0.1f, 10.0f);
     ubo.project[1][1] *= -1;
     memcpy(uniform_buffer_mapped_, &ubo, sizeof(ubo));
 }
 
-void RotateRectangle::UnmapAndDestroyUniformBuffer() {
+void RectangleMultisample::UnmapAndDestroyUniformBuffer() {
     uniform_memory_->UnmapMemory();
     VulkanLogicDevice::FreeMemory(&uniform_memory_);
     VulkanLogicDevice::DestroyBuffer(&uniform_buffer_);
 }
 
-VulkanDescriptorPool*  RotateRectangle::CreateDescriptorPool() {
+VulkanDescriptorPool*  RectangleMultisample::CreateDescriptorPool() {
     /* typedef struct VkDescriptorPoolSize {
         VkDescriptorType    type;
         uint32_t            descriptorCount;
@@ -419,12 +487,12 @@ VulkanDescriptorPool*  RotateRectangle::CreateDescriptorPool() {
     return device_->CreateDescriptorPool(&pool_info);
 }
 
-VulkanDescriptorSet* RotateRectangle::CreateDescriptorSet(VulkanDescriptorPool* pool, VulkanDescriptorSetLayout* set_layout) {
+VulkanDescriptorSet* RectangleMultisample::CreateDescriptorSet(VulkanDescriptorPool* pool, VulkanDescriptorSetLayout* set_layout) {
     VkDescriptorSetLayout set_layout1 = set_layout->descriptor_set_layout();
     return pool->AllocateDescriptorSet(&set_layout1);
 }
 
-void RotateRectangle::BindDescriptorSetWithBuffer() {
+void RectangleMultisample::BindDescriptorSetWithBuffer() {
     /* typedef struct VkDescriptorBufferInfo {
         VkBuffer        buffer;
         VkDeviceSize    offset;
@@ -459,7 +527,7 @@ void RotateRectangle::BindDescriptorSetWithBuffer() {
     device_->UpdateDescriptorSets(1, &descriptorWrite);
 }
 
-VulkanPipelineLayout* RotateRectangle::CreatePipelineLayout(const VulkanDescriptorSetLayout* descriptor_set_layout) const {
+VulkanPipelineLayout* RectangleMultisample::CreatePipelineLayout(const VulkanDescriptorSetLayout* descriptor_set_layout) const {
     /*typedef struct VkPipelineLayoutCreateInfo {
         VkStructureType                 sType;
         const void*                     pNext;
@@ -479,10 +547,10 @@ VulkanPipelineLayout* RotateRectangle::CreatePipelineLayout(const VulkanDescript
     return device_->CreatePipelineLayout(&pipeline_layout_info);
 }
 
-VulkanPipeline* RotateRectangle::CreateGraphicsPipeline(const VulkanShaderModule* vert_shader_module,
-                                                  const VulkanShaderModule* frag_shader_module,
-                                                  const VulkanPipelineLayout* layout,
-                                                  const VulkanRenderPass* render_pass) const {
+VulkanPipeline* RectangleMultisample::CreateGraphicsPipeline(const VulkanShaderModule* vert_shader_module,
+                                                        const VulkanShaderModule* frag_shader_module,
+                                                        const VulkanPipelineLayout* layout,
+                                                        const VulkanRenderPass* render_pass) const {
     /* typedef struct VkGraphicsPipelineCreateInfo {
         VkStructureType                                  sType;
         const void*                                      pNext;
@@ -535,7 +603,7 @@ VulkanPipeline* RotateRectangle::CreateGraphicsPipeline(const VulkanShaderModule
     return device_->CreateGraphicPipeline(&pipeline_info);
 }
 
-std::vector<VkPipelineShaderStageCreateInfo> RotateRectangle::GetPipelineShaderStageCreateInfos(
+std::vector<VkPipelineShaderStageCreateInfo> RectangleMultisample::GetPipelineShaderStageCreateInfos(
         const VulkanShaderModule* vert_shader_module, const VulkanShaderModule* frag_shader_module) {
     /*typedef struct VkPipelineShaderStageCreateInfo {
         VkStructureType                     sType;
@@ -560,7 +628,7 @@ std::vector<VkPipelineShaderStageCreateInfo> RotateRectangle::GetPipelineShaderS
     return shader_stages;
 }
 
-VkPipelineVertexInputStateCreateInfo RotateRectangle::GetPipelineVertexInputStateCreateInfo() const {
+VkPipelineVertexInputStateCreateInfo RectangleMultisample::GetPipelineVertexInputStateCreateInfo() const {
     /* typedef struct VkPipelineVertexInputStateCreateInfo {
         VkStructureType                             sType;
         const void*                                 pNext;
@@ -579,7 +647,7 @@ VkPipelineVertexInputStateCreateInfo RotateRectangle::GetPipelineVertexInputStat
     return vertex_input_info;
 }
 
-VkPipelineInputAssemblyStateCreateInfo RotateRectangle::GetPipelineInputAssemblyStateCreateInfo() {
+VkPipelineInputAssemblyStateCreateInfo RectangleMultisample::GetPipelineInputAssemblyStateCreateInfo() {
     /*typedef struct VkPipelineInputAssemblyStateCreateInfo {
         VkStructureType                            sType;
         const void*                                pNext;
@@ -594,7 +662,7 @@ VkPipelineInputAssemblyStateCreateInfo RotateRectangle::GetPipelineInputAssembly
     return input_assembly;
 }
 
-VkPipelineViewportStateCreateInfo RotateRectangle::GetPipelineViewportStateCreateInfo() {
+VkPipelineViewportStateCreateInfo RectangleMultisample::GetPipelineViewportStateCreateInfo() {
     /*typedef struct VkPipelineViewportStateCreateInfo {
         VkStructureType                       sType;
         const void*                           pNext;
@@ -611,7 +679,7 @@ VkPipelineViewportStateCreateInfo RotateRectangle::GetPipelineViewportStateCreat
     return viewportState;
 }
 
-VkPipelineRasterizationStateCreateInfo RotateRectangle::GetPipelineRasterizationStateCreateInfo() {
+VkPipelineRasterizationStateCreateInfo RectangleMultisample::GetPipelineRasterizationStateCreateInfo() {
     /* typedef struct VkPipelineRasterizationStateCreateInfo {
         VkStructureType                            sType;
         const void*                                pNext;
@@ -642,7 +710,7 @@ VkPipelineRasterizationStateCreateInfo RotateRectangle::GetPipelineRasterization
     return rasterizer;
 }
 
-VkPipelineMultisampleStateCreateInfo RotateRectangle::GetPipelineMultisampleStateCreateInfo() {
+VkPipelineMultisampleStateCreateInfo RectangleMultisample::GetPipelineMultisampleStateCreateInfo() {
     /* typedef struct VkPipelineMultisampleStateCreateInfo {
         VkStructureType                          sType;
         const void*                              pNext;
@@ -656,7 +724,7 @@ VkPipelineMultisampleStateCreateInfo RotateRectangle::GetPipelineMultisampleStat
     } VkPipelineMultisampleStateCreateInfo; */
     VkPipelineMultisampleStateCreateInfo multisample{};
     multisample.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    multisample.rasterizationSamples = VK_SAMPLE_COUNT_4_BIT;
     multisample.sampleShadingEnable = VK_FALSE;
     multisample.minSampleShading = 1.0f; // Optional
     multisample.pSampleMask = nullptr; // Optional
@@ -665,7 +733,7 @@ VkPipelineMultisampleStateCreateInfo RotateRectangle::GetPipelineMultisampleStat
     return multisample;
 }
 
-VkPipelineColorBlendStateCreateInfo RotateRectangle::GetPipelineColorBlendStateCreateInfo(
+VkPipelineColorBlendStateCreateInfo RectangleMultisample::GetPipelineColorBlendStateCreateInfo(
         const VkPipelineColorBlendAttachmentState* color_blend_attachment) {
     /* typedef struct VkPipelineColorBlendStateCreateInfo {
         VkStructureType                               sType;
@@ -690,7 +758,7 @@ VkPipelineColorBlendStateCreateInfo RotateRectangle::GetPipelineColorBlendStateC
     return color_blending;
 }
 
-VkPipelineColorBlendAttachmentState RotateRectangle::GetPipelineColorBlendAttachmentState() {
+VkPipelineColorBlendAttachmentState RectangleMultisample::GetPipelineColorBlendAttachmentState() {
     /* typedef struct VkPipelineColorBlendAttachmentState {
         VkBool32                 blendEnable;
         VkBlendFactor            srcColorBlendFactor;
@@ -713,7 +781,7 @@ VkPipelineColorBlendAttachmentState RotateRectangle::GetPipelineColorBlendAttach
     return color_blend_attachment;
 }
 
-VkPipelineDynamicStateCreateInfo RotateRectangle::GetPipelineDynamicStateCreateInfo(const std::vector<VkDynamicState>& dynamic_states) {
+VkPipelineDynamicStateCreateInfo RectangleMultisample::GetPipelineDynamicStateCreateInfo(const std::vector<VkDynamicState>& dynamic_states) {
     /* typedef struct VkPipelineDynamicStateCreateInfo {
         VkStructureType                      sType;
         const void*                          pNext;

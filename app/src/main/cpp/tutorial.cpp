@@ -16,18 +16,10 @@
 #include "depth_triangle.h"
 #include "viking_room.h"
 #include "viking_room_mipmap.h"
-
-void* thread_run(void* param) {
-    auto* tutorial = (Tutorial*)param;
-    tutorial->Run();
-    return nullptr;
-}
+#include "rectangle_multisample.h"
 
 Tutorial::Tutorial(AAssetManager* asset_manager) :
-        asset_manager_(asset_manager),
-        thread_(0),
-        thread_state_(0),
-        window_(nullptr),
+        TutorialBase(asset_manager),
         instance_(nullptr),
         physical_device_(nullptr),
         surface_(nullptr),
@@ -53,23 +45,6 @@ Tutorial::Tutorial(AAssetManager* asset_manager) :
     physical_device_vulkan_11_features_.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
     physical_device_features_.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
     physical_device_features_.pNext = &physical_device_vulkan_11_features_;
-}
-
-void Tutorial::StartThread(ANativeWindow* window) {
-    window_  = window;
-    std::unique_lock<std::mutex> lock(thread_state_mutex_);
-    if (thread_state_ == 0) {
-        thread_state_ = 1;
-        pthread_create(&thread_, nullptr, thread_run, this);
-    }
-}
-
-void Tutorial::StopThread() {
-    std::unique_lock<std::mutex> lock(thread_state_mutex_);
-    thread_state_ = 0;
-    lock.unlock();
-    void* ret = nullptr;
-    pthread_join(thread_, &ret);
 }
 
 void Tutorial::Run() {
@@ -128,7 +103,7 @@ void Tutorial::DestroyInstance() {
     }
 }
 
-bool Tutorial::pickPhysicalDevice() {
+bool Tutorial::PickPhysicalDevice() {
     std::vector<VulkanPhysicalDevice> physical_devices = instance_->EnumeratePhysicalDevices();
 
     bool find_physical_device = false;
@@ -233,7 +208,7 @@ void Tutorial::DestroyImageViews() {
 }
 
 void Tutorial::CreateGraphicPipeline() {
-    obj_ = new Rectangle(
+    obj_ = new RectangleMultisample(
                              logic_device_,
                              surface_format_.format,
                              swap_chain_extent_);
@@ -251,6 +226,9 @@ void Tutorial::CreateFrameBuffers() {
     for (size_t i = 0; i < swap_chain_image_views_.size(); i++) {
         std::vector<VkImageView> attachments;
         attachments.push_back(swap_chain_image_views_[i]->image_view());
+        if (obj_->color_attachment_image_view()) {
+            attachments.push_back(obj_->color_attachment_image_view()->image_view());
+        }
         if (obj_->depth_attachment_image_view()) {
             attachments.push_back(obj_->depth_attachment_image_view()->image_view());
         }
@@ -377,16 +355,6 @@ void Tutorial::DrawFrame() {
     present_info.pImageIndices = &image_index;
     present_queue_->QueuePresentKHR(&present_info);
 }
-
-//void Tutorial::TestAOTCompilation(AAssetManager* asset_manager) {
-//    AAsset* file = AAssetManager_open(asset_manager,
-//                                      "shaders/triangle.vert.spv", AASSET_MODE_BUFFER);
-//    size_t fileLength = AAsset_getLength(file);
-//    char* fileContent = new char[fileLength];
-//    AAsset_read(file, fileContent, fileLength);
-//    delete[] fileContent;
-//    AAsset_close(file);
-//}
 
 VkSurfaceFormatKHR Tutorial::ChooseSwapSurfaceFormat() {
     std::vector<VkSurfaceFormatKHR> formats =

@@ -54,6 +54,7 @@ public:
     void CmdBlitImage(VkImage src, VkImageLayout src_layout, VkImage dst, VkImageLayout dst_layout,
                       uint32_t region_count, const VkImageBlit* regions, VkFilter filter);
 
+    void CmdDispatch(uint32_t group_count_x, uint32_t group_count_y, uint32_t group_count_z) const;
     VulkanCommandBuffer& operator = (const VulkanCommandBuffer&) = delete;
 private:
     VkDevice device_;

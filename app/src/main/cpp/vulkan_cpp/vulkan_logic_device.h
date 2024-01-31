@@ -62,6 +62,7 @@ public:
     VulkanPipelineLayout* CreatePipelineLayout(const VkPipelineLayoutCreateInfo *info) const;
     static void DestroyPipelineLayout(VulkanPipelineLayout** pipeline_layout);
     VulkanPipeline* CreateGraphicPipeline(const VkGraphicsPipelineCreateInfo *info) const;
+    VulkanPipeline* CreateComputePipeline(const VkComputePipelineCreateInfo *info) const;
     static void DestroyPipelines(VulkanPipeline** pipeline);
 
     VulkanFrameBuffer* CreateFrameBuffer(const VkFramebufferCreateInfo *info) const;

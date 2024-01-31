@@ -20,6 +20,16 @@ void VulkanPhysicalDevice::GetProperties(VkPhysicalDeviceProperties* device_prop
     vkGetPhysicalDeviceProperties(device_, device_properties);
 }
 
+void VulkanPhysicalDevice::GetProperties2(VkPhysicalDeviceProperties2* device_properties) const {
+    auto func = (PFN_vkGetPhysicalDeviceProperties2) vkGetInstanceProcAddr(instance_,
+                                                                         "vkGetPhysicalDeviceProperties2");
+    if (func != nullptr) {
+        func(device_, device_properties);
+    } else {
+        LOG_W("", "No vkGetPhysicalDeviceFeatures2 Fun\n");
+    }
+}
+
 void VulkanPhysicalDevice::GetFeatures(VkPhysicalDeviceFeatures * device_features) const {
     vkGetPhysicalDeviceFeatures(device_, device_features);
 }
@@ -29,7 +39,6 @@ void VulkanPhysicalDevice::GetFeatures2(VkPhysicalDeviceFeatures2 * device_featu
                                                                            "vkGetPhysicalDeviceFeatures2");
     if (func != nullptr) {
         func(device_, device_features);
-        vkGetPhysicalDeviceFeatures(device_, &device_features->features);
     } else {
         LOG_W("", "No vkGetPhysicalDeviceFeatures2 Fun\n");
     }
@@ -39,12 +48,24 @@ void VulkanPhysicalDevice::GetFormatProperties(VkFormat format, VkFormatProperti
     vkGetPhysicalDeviceFormatProperties(device_, format, props);
 }
 
+void VulkanPhysicalDevice::GetMemoryProperties(VkPhysicalDeviceMemoryProperties* memory_properties) const {
+    vkGetPhysicalDeviceMemoryProperties(device_, memory_properties);
+}
+
 std::vector<VkExtensionProperties> VulkanPhysicalDevice::EnumerateExtensionProperties() const {
     uint32_t extension_count;
     vkEnumerateDeviceExtensionProperties(device_, nullptr, &extension_count, nullptr);
     std::vector<VkExtensionProperties> extensions_properties(extension_count);
     vkEnumerateDeviceExtensionProperties(device_, nullptr, &extension_count, extensions_properties.data());
     return extensions_properties;
+}
+
+std::vector<VkLayerProperties> VulkanPhysicalDevice::EnumerateLayerProperties() const {
+    uint32_t layer_count;
+    vkEnumerateDeviceLayerProperties(device_, &layer_count, nullptr);
+    std::vector<VkLayerProperties> layer_properties(layer_count);
+    vkEnumerateDeviceLayerProperties(device_, &layer_count, layer_properties.data());
+    return layer_properties;
 }
 
 std::vector<VkQueueFamilyProperties> VulkanPhysicalDevice::GetQueueFamilyProperties() const{

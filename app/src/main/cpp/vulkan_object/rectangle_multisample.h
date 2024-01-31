@@ -1,18 +1,17 @@
 //
-// Created by hj6231 on 2024/1/2.
+// Created by hj6231 on 2024/1/19.
 //
 
 #pragma once
 #include "vulkan_object.h"
 #include <glm/glm.hpp>
 
-class RotateRectangle : public VulkanObject {
+class RectangleMultisample : public VulkanObject {
 public:
-    RotateRectangle(VulkanLogicDevice* device,
-                    VkFormat swap_chain_image_format,
-                    VkExtent2D frame_buffer_size);
-    ~RotateRectangle() = default;
-
+    RectangleMultisample(VulkanLogicDevice* device,
+    VkFormat swap_chain_image_format,
+            VkExtent2D frame_buffer_size);
+    ~RectangleMultisample() = default;
     typedef struct  {
         glm::vec2 pos;
         glm::vec3 color;
@@ -39,6 +38,9 @@ protected:
     void DestroyIndexBuffer() override {}
 
     void CreateDescriptorSets() override;
+
+    void CreateColorAttachment();
+    void DestroyColorAttachment();
 
     void CreateUniformBufferAndMap();
     void CopyDataToUniformBuffer() const;
@@ -93,5 +95,4 @@ private:// GraphicsPipelineCreateInfo
             {0, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(vertex_t, pos)},
             {1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(vertex_t, color)}};
 };
-
 
